@@ -1,3 +1,4 @@
+import numpy as np
 from collections import deque
 
 P1 = 1
@@ -10,13 +11,13 @@ class GridGame:
         self.reset()
 
     def reset(self):
-        self.grid = [[0] * self.grid_size for _ in range(self.grid_size)]
+        self.grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
 
-        self.p1_pos = [self.grid_size // 2, self.grid_size - 1]
-        self.p2_pos = [self.grid_size // 2, 0]
+        self.p1_pos = np.array([self.grid_size - 1, self.grid_size // 2])
+        self.p2_pos = np.array([0, self.grid_size // 2])  # top middle
 
-        self.grid[self.p1_pos[0]][self.p1_pos[1]] = P1
-        self.grid[self.p2_pos[0]][self.p2_pos[1]] = P2
+        self.grid[self.p1_pos[0], self.p1_pos[1]] = P1
+        self.grid[self.p2_pos[0], self.p2_pos[1]] = P2
 
         self.horizontal_walls = set()
         self.vertical_walls = set()
@@ -40,37 +41,37 @@ class GridGame:
         action, direction = move
 
         if player == P1:
-            current = self.p1_pos
+            current = self.p1_pos.copy()
         else:
-            current = self.p2_pos
+            current = self.p2_pos.copy()
 
         # parsing direzione
         parts = direction.split("-")
 
-        # movimento base
+        # movimento base (row, col) coordinates
         base_dirs = {
-            "up": (0, -1),
-            "down": (0, 1),
-            "left": (-1, 0),
-            "right": (1, 0),
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
         }
 
-        dx, dy = base_dirs[parts[0]]
+        drow, dcol = base_dirs[parts[0]]
 
-        new_pos = [current[0] + dx, current[1] + dy]
+        new_pos = current + np.array([drow, dcol])
 
         # caso jump
         if len(parts) == 2 and parts[1] == "jump":
-            new_pos = [new_pos[0] + dx, new_pos[1] + dy]
+            new_pos = new_pos + np.array([drow, dcol])
 
         # caso diagonale
         elif len(parts) == 2:
-            sdx, sdy = base_dirs[parts[1]]
-            new_pos = [new_pos[0] + sdx, new_pos[1] + sdy]
+            sdrow, sdcol = base_dirs[parts[1]]
+            new_pos = new_pos + np.array([sdrow, sdcol])
 
         # aggiorna griglia
-        self.grid[current[0]][current[1]] = 0
-        self.grid[new_pos[0]][new_pos[1]] = player
+        self.grid[current[0], current[1]] = 0
+        self.grid[new_pos[0], new_pos[1]] = player
 
         if player == P1:
             self.p1_pos = new_pos
@@ -82,38 +83,38 @@ class GridGame:
 
     def check_winner(self):
 
-        if self.p1_pos[1] == 0:
+        if self.p1_pos[0] == 0:  # row == 0 (top)
             return P1
-        elif self.p2_pos[1] == self.grid_size - 1:
+        elif self.p2_pos[0] == self.grid_size - 1:  # row == grid_size-1 (bottom)
             return P2
         return None
 
     def print_grid(self):
         print("-" * 30)
 
-        for y in range(self.grid_size):
+        for row in range(self.grid_size):
             # riga celle
-            row = ""
-            for x in range(self.grid_size):
-                row += str(self.grid[x][y])
+            line = ""
+            for col in range(self.grid_size):
+                line += str(self.grid[row, col])
 
                 # muro verticale
-                if x < self.grid_size - 1:
-                    if (x, y) in self.vertical_walls:
-                        row += "|"
+                if col < self.grid_size - 1:
+                    if (row, col) in self.vertical_walls:
+                        line += "|"
                     else:
-                        row += " "
-            print(row)
+                        line += " "
+            print(line)
 
             # riga muri orizzontali
-            if y < self.grid_size - 1:
-                row = ""
-                for x in range(self.grid_size):
-                    if (x, y) in self.horizontal_walls:
-                        row += "──"
+            if row < self.grid_size - 1:
+                line = ""
+                for col in range(self.grid_size):
+                    if (row, col) in self.horizontal_walls:
+                        line += "──"
                     else:
-                        row += "  "
-                print(row)
+                        line += "  "
+                print(line)
 
         print("-" * 30)
 
@@ -128,50 +129,50 @@ class GridGame:
         moves = []
 
         directions = {
-            "up": (0, -1),
-            "down": (0, 1),
-            "left": (-1, 0),
-            "right": (1, 0),
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1),
         }
 
-        for d, (dx, dy) in directions.items():
-            adj = [current[0] + dx, current[1] + dy]
+        for d, (drow, dcol) in directions.items():
+            adj = current + np.array([drow, dcol])
 
             if not self.is_inside_grid(adj):
                 continue
 
             # caso normale: cella libera
             if (
-                adj != opponent
-                and self.grid[adj[0]][adj[1]] == 0
+                not np.array_equal(adj, opponent)
+                and self.grid[adj[0], adj[1]] == 0
                 and not self.is_blocked(current, adj)
             ):
                 moves.append(("move", d))
                 continue
 
             # caso salto
-            if adj == opponent and not self.is_blocked(current, adj):
-                jump = [adj[0] + dx, adj[1] + dy]
+            if np.array_equal(adj, opponent) and not self.is_blocked(current, adj):
+                jump = adj + np.array([drow, dcol])
 
                 if (
                     self.is_inside_grid(jump)
-                    and self.grid[jump[0]][jump[1]] == 0
+                    and self.grid[jump[0], jump[1]] == 0
                     and not self.is_blocked(adj, jump)
                 ):
                     moves.append(("move", f"{d}-jump"))
                 else:
                     # diagonali
                     if d in ["up", "down"]:
-                        sides = [("left", (-1, 0)), ("right", (1, 0))]
+                        sides = [("left", (0, -1)), ("right", (0, 1))]
                     else:
-                        sides = [("up", (0, -1)), ("down", (0, 1))]
+                        sides = [("up", (-1, 0)), ("down", (1, 0))]
 
-                    for sd, (sdx, sdy) in sides:
-                        diag = [adj[0] + sdx, adj[1] + sdy]
+                    for sd, (sdrow, sdcol) in sides:
+                        diag = adj + np.array([sdrow, sdcol])
 
                         if (
                             self.is_inside_grid(diag)
-                            and self.grid[diag[0]][diag[1]] == 0
+                            and self.grid[diag[0], diag[1]] == 0
                             and not self.is_blocked(adj, diag)
                         ):
                             moves.append(("move", f"{d}-{sd}"))
@@ -179,13 +180,14 @@ class GridGame:
         return moves
 
     def is_inside_grid(self, pos):
-        return 0 <= pos[0] < self.grid_size and 0 <= pos[1] < self.grid_size
+        pos_array = np.atleast_1d(pos)
+        return 0 <= pos_array[0] < self.grid_size and 0 <= pos_array[1] < self.grid_size
 
     def place_wall(self, player, location, orientation):
         if player != self.turn:
             print("Non è il tuo turno")
             return False, None
-        x, y = location
+        row, col = location
 
         if player == P1 and self.p1_available_walls <= 0:
             print("Non hai più muri disponibili")
@@ -195,22 +197,22 @@ class GridGame:
             return False, "No walls available!"
 
         # limiti (muri stanno tra le celle)
-        if x < 0 or y < 0 or x >= self.grid_size - 1 or y >= self.grid_size - 1:
+        if row < 0 or col < 0 or row >= self.grid_size - 1 or col >= self.grid_size - 1:
             print("Posizione muro non valida (fuori range)")
             return False, None
 
         if orientation == "h":
             if (
-                (x, y) in self.horizontal_walls
-                or (x + 1, y) in self.horizontal_walls
-                or (x - 1, y) in self.horizontal_walls
+                (row, col) in self.horizontal_walls
+                or (row, col + 1) in self.horizontal_walls
+                or (row, col - 1) in self.horizontal_walls
             ):
                 return False, "Invalid placement!"
 
-            if (x, y) in self.vertical_walls:
+            if (row, col) in self.vertical_walls:
                 return False, "Invalid placement!"
 
-            self.horizontal_walls.add((x, y))
+            self.horizontal_walls.add((row, col))
 
             if player == P1:
                 self.p1_available_walls -= 1
@@ -219,15 +221,15 @@ class GridGame:
 
         elif orientation == "v":
             if (
-                (x, y) in self.vertical_walls
-                or (x, y + 1) in self.vertical_walls
-                or (x, y - 1) in self.vertical_walls
+                (row, col) in self.vertical_walls
+                or (row + 1, col) in self.vertical_walls
+                or (row - 1, col) in self.vertical_walls
             ):
                 return False, "Invalid placement!"
 
-            if (x, y) in self.horizontal_walls:
+            if (row, col) in self.horizontal_walls:
                 return False, "Invalid placement!"
-            self.vertical_walls.add((x, y))
+            self.vertical_walls.add((row, col))
             if player == P1:
                 self.p1_available_walls -= 1
             else:
@@ -242,13 +244,13 @@ class GridGame:
 
             # rollback
             if orientation == "h":
-                self.horizontal_walls.remove((x, y))
+                self.horizontal_walls.remove((row, col))
                 if player == P1:
                     self.p1_available_walls += 1
                 else:
                     self.p2_availablewalls += 1
             else:
-                self.vertical_walls.remove((x, y))
+                self.vertical_walls.remove((row, col))
                 if player == P1:
                     self.p1_available_walls += 1
                 else:
@@ -260,56 +262,57 @@ class GridGame:
         return True, None
 
     def is_blocked(self, a, b):
-        x1, y1 = a
-        x2, y2 = b
+        row1, col1 = a
+        row2, col2 = b
 
-        # movimento verticale (su/giù)
-        if x1 == x2:
-            y = min(y1, y2)
+        # movimento verticale (up/down)
+        if col1 == col2:
+            row = min(row1, row2)
 
             # muro orizzontale blocca
-            if (x1, y) in self.horizontal_walls:
+            if (row, col1) in self.horizontal_walls:
                 return True
-            if (x1 - 1, y) in self.horizontal_walls:
+            if (row, col1 - 1) in self.horizontal_walls:
                 return True
 
-        # movimento orizzontale (sx/dx)
-        elif y1 == y2:
-            x = min(x1, x2)
+        # movimento orizzontale (left/right)
+        elif row1 == row2:
+            col = min(col1, col2)
 
             # muro verticale blocca
-            if (x, y1) in self.vertical_walls:
+            if (row1, col) in self.vertical_walls:
                 return True
-            if (x, y1 - 1) in self.vertical_walls:
+            if (row1 - 1, col) in self.vertical_walls:
                 return True
 
         return False
 
+    # BFS per verificare se c'è un percorso valido per entrambi i giocatori dopo il posizionamento del muro
     def _has_path(self, start, target_row):
         visited = set()
         queue = deque([tuple(start)])
 
-        directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
         while queue:
-            x, y = queue.popleft()
+            row, col = queue.popleft()
 
-            # 🎯 raggiunta la goal
-            if y == target_row:
+            # raggiunto il goal
+            if row == target_row:
                 return True
 
-            for dx, dy in directions:
-                nx, ny = x + dx, y + dy
-                next_pos = (nx, ny)
+            for drow, dcol in directions:
+                nrow, ncol = row + drow, col + dcol
+                next_pos = (nrow, ncol)
 
-                if not self.is_inside_grid([nx, ny]):
+                if not self.is_inside_grid(next_pos):
                     continue
 
                 if next_pos in visited:
                     continue
 
                 # muro blocca?
-                if self.is_blocked((x, y), next_pos):
+                if self.is_blocked((row, col), next_pos):
                     continue
 
                 visited.add(next_pos)
@@ -318,6 +321,10 @@ class GridGame:
         return False
 
     def _players_have_path(self):
-        p1_ok = self._has_path(self.p1_pos, target_row=0)
-        p2_ok = self._has_path(self.p2_pos, target_row=self.grid_size - 1)
+        p1_ok = self._has_path(
+            self.p1_pos, target_row=0
+        )  # P1 needs to reach top (row 0)
+        p2_ok = self._has_path(
+            self.p2_pos, target_row=self.grid_size - 1
+        )  # P2 needs to reach bottom
         return p1_ok and p2_ok

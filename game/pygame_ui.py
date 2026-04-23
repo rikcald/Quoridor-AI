@@ -1,3 +1,4 @@
+import numpy as np
 import pygame
 from game_logic import GridGame
 
@@ -25,12 +26,15 @@ ui_message1 = None
 
 
 def cell_from_mouse(pos):
-    x, y = pos
-    return [x // CELL, y // CELL]
+    screen_x, screen_y = pos
+    # Convert screen coordinates to (row, col)
+    row = screen_y // CELL
+    col = screen_x // CELL
+    return np.array([row, col])
 
 
-def is_valid_wall_cell(x, y):
-    return 0 <= x < game.grid_size - 1 and 0 <= y < game.grid_size - 1
+def is_valid_wall_cell(row, col):
+    return 0 <= row < game.grid_size - 1 and 0 <= col < game.grid_size - 1
 
 
 def simulate_move(game, player, direction):
@@ -38,21 +42,22 @@ def simulate_move(game, player, direction):
 
     parts = direction.split("-")
 
+    # Updated for (row, col) coordinates
     base = {
-        "up": (0, -1),
-        "down": (0, 1),
-        "left": (-1, 0),
-        "right": (1, 0),
+        "up": (-1, 0),
+        "down": (1, 0),
+        "left": (0, -1),
+        "right": (0, 1),
     }
 
-    dx, dy = base[parts[0]]
-    new_pos = [current[0] + dx, current[1] + dy]
+    drow, dcol = base[parts[0]]
+    new_pos = current + np.array([drow, dcol])
 
     if len(parts) == 2 and parts[1] == "jump":
-        new_pos = [new_pos[0] + dx, new_pos[1] + dy]
+        new_pos = new_pos + np.array([drow, dcol])
     elif len(parts) == 2:
-        sdx, sdy = base[parts[1]]
-        new_pos = [new_pos[0] + sdx, new_pos[1] + sdy]
+        sdrow, sdcol = base[parts[1]]
+        new_pos = new_pos + np.array([sdrow, sdcol])
 
     return new_pos
 
@@ -63,9 +68,12 @@ def simulate_move(game, player, direction):
 
 
 def draw_grid():
-    for x in range(game.grid_size):
-        for y in range(game.grid_size):
-            rect = pygame.Rect(x * CELL, y * CELL, CELL, CELL)
+    for row in range(game.grid_size):
+        for col in range(game.grid_size):
+            # Convert (row, col) to screen coordinates (screen_x, screen_y)
+            screen_x = col * CELL
+            screen_y = row * CELL
+            rect = pygame.Rect(screen_x, screen_y, CELL, CELL)
             pygame.draw.rect(screen, (200, 200, 200), rect, 1)
 
 
@@ -73,24 +81,27 @@ def draw_players():
     colors = {1: (0, 0, 255), 2: (255, 0, 0)}
 
     for p, pos in [(1, game.p1_pos), (2, game.p2_pos)]:
-        cx = pos[0] * CELL + CELL // 2
-        cy = pos[1] * CELL + CELL // 2
-        pygame.draw.circle(screen, colors[p], (cx, cy), CELL // 3)
+        # pos is (row, col), convert to screen coordinates
+        screen_x = pos[1] * CELL + CELL // 2
+        screen_y = pos[0] * CELL + CELL // 2
+        pygame.draw.circle(screen, colors[p], (screen_x, screen_y), CELL // 3)
 
 
 def draw_walls():
-    for x, y in game.horizontal_walls:
+    # Horizontal walls: (row, col) format
+    for row, col in game.horizontal_walls:
         pygame.draw.rect(
             screen,
             (0, 0, 0),
-            pygame.Rect(x * CELL, (y + 1) * CELL - 5, CELL * 2, 10),
+            pygame.Rect(col * CELL, (row + 1) * CELL - 5, CELL * 2, 10),
         )
 
-    for x, y in game.vertical_walls:
+    # Vertical walls: (row, col) format
+    for row, col in game.vertical_walls:
         pygame.draw.rect(
             screen,
             (0, 0, 0),
-            pygame.Rect((x + 1) * CELL - 5, y * CELL, 10, CELL * 2),
+            pygame.Rect((col + 1) * CELL - 5, row * CELL, 10, CELL * 2),
         )
 
 
@@ -106,27 +117,30 @@ def draw_move_preview():
     for _, direction in moves:
         pos = simulate_move(game, player, direction)
 
+        # pos is (row, col), convert to screen coordinates
+        screen_x = pos[1] * CELL + CELL // 2
+        screen_y = pos[0] * CELL + CELL // 2
         pygame.draw.circle(
             screen,
             (0, 255, 0),
-            (pos[0] * CELL + CELL // 2, pos[1] * CELL + CELL // 2),
+            (screen_x, screen_y),
             10,
         )
 
 
 def draw_wall_preview(mouse_cell):
-    x, y = mouse_cell
+    row, col = mouse_cell
 
-    if not is_valid_wall_cell(x, y):
+    if not is_valid_wall_cell(row, col):
         return  # non disegnare nulla fuori range
 
     keys = pygame.key.get_pressed()
     horizontal = keys[pygame.K_LSHIFT]
 
     if horizontal:
-        rect = pygame.Rect(x * CELL, (y + 1) * CELL - 5, CELL * 2, 10)
+        rect = pygame.Rect(col * CELL, (row + 1) * CELL - 5, CELL * 2, 10)
     else:
-        rect = pygame.Rect((x + 1) * CELL - 5, y * CELL, 10, CELL * 2)
+        rect = pygame.Rect((col + 1) * CELL - 5, row * CELL, 10, CELL * 2)
 
     pygame.draw.rect(screen, (0, 255, 0), rect, 2)
 
@@ -194,22 +208,22 @@ while running:
                 for _, direction in moves:
                     new_pos = simulate_move(game, player, direction)
 
-                    if new_pos == mouse_cell:
+                    if np.array_equal(new_pos, mouse_cell):
                         game.move(player, ("move", direction))
                         winner = game.check_winner()
                         break
 
             # ---------------- WALL ----------------
             elif mode == "wall":
-                x, y = mouse_cell
+                row, col = mouse_cell
 
-                if not is_valid_wall_cell(x, y):
+                if not is_valid_wall_cell(row, col):
                     continue  # blocca click invalidi
 
                 horizontal = pygame.key.get_pressed()[pygame.K_LSHIFT]
                 orientation = "h" if horizontal else "v"
 
-                success, message = game.place_wall(player, (x, y), orientation)
+                success, message = game.place_wall(player, (row, col), orientation)
                 ui_message1 = message
 
                 if success:
