@@ -89,6 +89,7 @@ class GridGame:
             return P2
         return None
 
+    # Expired: this is now handled in pygame_ui.py
     def print_grid(self):
         print("-" * 30)
 
@@ -204,12 +205,10 @@ class GridGame:
         if orientation == "h":
             if (
                 (row, col) in self.horizontal_walls
+                or (row, col) in self.vertical_walls
                 or (row, col + 1) in self.horizontal_walls
                 or (row, col - 1) in self.horizontal_walls
             ):
-                return False, "Invalid placement!"
-
-            if (row, col) in self.vertical_walls:
                 return False, "Invalid placement!"
 
             self.horizontal_walls.add((row, col))
@@ -222,14 +221,14 @@ class GridGame:
         elif orientation == "v":
             if (
                 (row, col) in self.vertical_walls
+                or (row, col) in self.horizontal_walls
                 or (row + 1, col) in self.vertical_walls
                 or (row - 1, col) in self.vertical_walls
             ):
                 return False, "Invalid placement!"
 
-            if (row, col) in self.horizontal_walls:
-                return False, "Invalid placement!"
             self.vertical_walls.add((row, col))
+
             if player == P1:
                 self.p1_available_walls -= 1
             else:
