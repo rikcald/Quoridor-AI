@@ -79,7 +79,20 @@ class GridGameAi:
                 return NUM_MOVE_ACTIONS + NUM_WALL_POS + wall_index
 
     def step(self, action):
-        pass
+        step = self.decode_action(action)
+        if step[0] == "move":
+            # we only care about the direction for the move action (the first element is just the string "move")
+            _, direction = step
+            self.move(self.turn, direction)
+        else:
+            # we only care about the location and orientation for the wall action (the first element is just the string "wall")
+            _, location, orientation = step
+            self.place_wall(self.turn, location, orientation)
+
+        # Check if the game is done after the action
+        done = self.check_winner() is not None
+
+        # TODO  return state, reward, done, {}
 
     def move(self, player, move):
 
