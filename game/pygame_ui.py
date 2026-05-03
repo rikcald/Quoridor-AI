@@ -42,7 +42,6 @@ def simulate_move(game, player, direction):
 
     parts = direction.split("-")
 
-    # Updated for (row, col) coordinates
     base = {
         "up": (-1, 0),
         "down": (1, 0),
@@ -88,7 +87,7 @@ def draw_players():
 
 
 def draw_walls():
-    # Horizontal walls: (row, col) format
+
     for row, col in game.horizontal_walls:
         pygame.draw.rect(
             screen,
@@ -157,12 +156,14 @@ def draw_sidebar():
     txt3 = font.render("Hold 'LShift' to change wall orientation", True, (0, 0, 0))
     txt4 = font.render(f"P1 walls: {game.p1_available_walls}", True, (0, 0, 200))
     txt5 = font.render(f"P2 walls: {game.p2_availablewalls}", True, (200, 0, 0))
+    txt6 = font.render(f" Turn: player {game.turn}", True, (0, 0, 0))
 
     screen.blit(txt1, (CELL * game.grid_size + 10, 20))
     screen.blit(txt2, (CELL * game.grid_size + 10, 50))
     screen.blit(txt3, (CELL * game.grid_size + 10, 80))
     screen.blit(txt4, (CELL * game.grid_size + 10, 110))
     screen.blit(txt5, (CELL * game.grid_size + 10, 140))
+    screen.blit(txt6, (CELL * game.grid_size + 10, 170))
 
     if ui_message1:
         msg_surface = font.render(ui_message1, True, (0, 0, 0))

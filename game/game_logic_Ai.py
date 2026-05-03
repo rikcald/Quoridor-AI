@@ -176,6 +176,16 @@ class GridGameAi:
 
         return mask
 
+    def random_agent_action(env, player):
+        mask = env.get_action_mask(player)
+
+        valid_actions = np.where(mask == 1)[0]
+
+        if len(valid_actions) == 0:
+            raise Exception("No valid actions available")
+
+        return np.random.choice(valid_actions)
+
     # ---------------------------------------------------
 
     def move(self, player, move):
