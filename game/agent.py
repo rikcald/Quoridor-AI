@@ -22,10 +22,28 @@ class Agent:
         self.model = None  # TODO
         self.trainer = None  # TODO
 
+    # Choose action based on environment's action mask
     def get_action(self, state, env, player):
-        # Choose action based on environment's action mask
-        # Video at 1:06:00
-        pass
+
+        # exploitation vs exploration tradeoff
+        # decrese epsilon (aka exploration) as the number of games increases
+        self.epsilon = 80 - self.n_games
+        if random.randint(0, 200) < self.epsilon:
+            # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
+            mask = env.get_action_mask(player)
+
+            # get valid action indices e.g. [0, 2, 5]
+            valid_actions = np.where(mask == 1)[0]
+
+            if len(valid_actions) == 0:
+                raise Exception("No valid actions available")
+
+            return np.random.choice(valid_actions)
+        else:
+            prediction = self.model(state)
+            move = torch.argmax(prediction).item()
+
+            return move
 
     def remember(self, state, action, reward, next_state, done):
         # store experience in memory
