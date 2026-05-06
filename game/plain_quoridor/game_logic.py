@@ -34,7 +34,7 @@ class GridGame:
             return
 
         moves = self.available_moves(player)
-
+        # print(f"Available moves for player {player}: {moves}")
         if move not in moves:
             raise ValueError(f"Mossa non valida: {move}")
 
@@ -80,6 +80,8 @@ class GridGame:
 
         print(f"Player {player} moves {new_pos} via {direction}")
         self.turn = P2 if self.turn == P1 else P1
+        moves = self.available_moves(player)
+        print(f"Available moves for player {player}: {moves}")
 
     def check_winner(self):
 

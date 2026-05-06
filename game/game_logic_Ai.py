@@ -176,8 +176,8 @@ class GridGameAi:
 
         return mask
 
-    def random_agent_action(self, player):
-        mask = self.get_action_mask(player)
+    def random_agent_action(env, player):
+        mask = env.get_action_mask(player)
 
         valid_actions = np.where(mask == 1)[0]
 
@@ -388,16 +388,21 @@ class GridGameAi:
             return False
 
         # Controllare collisioni con altri muri
-        # IMPORTANTE: Muri orizzontali e verticali POSSONO occupare lo stesso spazio
-        # perché vanno in direzioni diverse. Non escludere muri dell'orientamento opposto!
-        # Nel Quoridor, puoi piazzare due muri dello stesso tipo uno accanto all'altro
         if orientation == "h":
-            # Un muro orizzontale non può stare nello stesso posto
-            if (row, col) in self.horizontal_walls:
+            if (
+                (row, col) in self.horizontal_walls
+                or (row, col) in self.vertical_walls
+                or (row, col + 1) in self.horizontal_walls
+                or (row, col - 1) in self.horizontal_walls
+            ):
                 return False
         elif orientation == "v":
-            # Un muro verticale non può stare nello stesso posto
-            if (row, col) in self.vertical_walls:
+            if (
+                (row, col) in self.vertical_walls
+                or (row, col) in self.horizontal_walls
+                or (row + 1, col) in self.vertical_walls
+                or (row - 1, col) in self.vertical_walls
+            ):
                 return False
         else:
             return False
