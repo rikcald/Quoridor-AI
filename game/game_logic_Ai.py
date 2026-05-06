@@ -79,6 +79,7 @@ class GridGameAi:
             else:  # orientation == "v"
                 wall_index = row * (self.grid_size - 1) + col
                 return NUM_MOVE_ACTIONS + NUM_WALL_POS + wall_index
+        raise ValueError(f"Invalid action encoding: {action_type}, {args}")
 
     def step(self, action):
         player = self.turn
@@ -158,7 +159,9 @@ class GridGameAi:
 
         # Set mask[id] = 1.0 for valid move actions
         for move in moves:
-            action_id = self.encode_action(move)
+            # L'asterisco serve a spacchettare gli elementi come argomenti separati della tupla move, e.g. ("move", "up") -> action_type="move", direction="up"
+            action_id = self.encode_action(*move)
+
             mask[action_id] = 1.0
 
         # --- MURI ---
@@ -176,6 +179,7 @@ class GridGameAi:
 
         return mask
 
+    # TODO remove
     def random_agent_action(env, player):
         mask = env.get_action_mask(player)
 
@@ -356,6 +360,9 @@ class GridGameAi:
         # Validare il muro
         if not self._is_valid_wall(player, location, orientation):
             print("Posizionamento muro non valido")
+            print(
+                f"Player {player} attempted to place a wall at {location} with orientation {orientation}, but it was invalid."
+            )
             return False, "Invalid placement!"
 
         # Piazzare il muro
@@ -416,7 +423,6 @@ class GridGameAi:
 
         # Verificare se entrambi i giocatori hanno ancora un percorso
         valid = self._players_have_path()
-
         # Rollback della simulazione
         if orientation == "h":
             self.horizontal_walls.remove((row, col))
