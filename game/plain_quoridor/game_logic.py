@@ -80,7 +80,6 @@ class GridGame:
 
         print(f"Player {player} moves {new_pos} via {direction}")
         self.turn = P2 if self.turn == P1 else P1
-        return direction
 
     def check_winner(self):
 

@@ -1,4 +1,4 @@
-from game_logic import GridGame
+from game.plain_quoridor.game_logic import GridGame
 
 
 def main():
