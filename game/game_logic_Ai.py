@@ -378,6 +378,9 @@ class GridGameAi:
             self.p2_available_walls -= 1
 
         self.turn = P2 if self.turn == P1 else P1
+        print(
+            f"Player {player} placed a wall at {location} with orientation {orientation}"
+        )
         return True, None
 
     def _is_valid_wall(self, player, location, orientation):

@@ -42,6 +42,7 @@ class Agent:
         # decrese epsilon (aka exploration) as the number of games increases
         self.epsilon = 80 - self.n_games
         if random.randint(0, 200) < self.epsilon:
+            print("random action")
             # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
             mask = env.get_action_mask(self.player_id)
 
@@ -53,9 +54,10 @@ class Agent:
                     f"No valid actions available for player {self.player_id}"
                 )
 
-            return np.random.choice(valid_actions)
+            return int(np.random.choice(valid_actions))
 
         else:
+            print("predicted action")
             # Convert state to tensor and flatten it
             state_tensor = torch.tensor(state, dtype=torch.float).flatten()
             prediction = self.model(
@@ -210,11 +212,6 @@ class Agent:
                 )
                 # plot(plot_scores_p1)  # Opzionale: mostra i plot
 
-    def train(self):
-        # Deprecated: usa Agent.train_vs_agent() direttamente
-        print("DEPRECATO: usa Agent.train_vs_agent() invece!")
-        Agent.train_vs_agent()
-
     def random_agent_action(self, env, player):
         # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
         mask = env.get_action_mask(player)
@@ -291,7 +288,7 @@ class Agent:
 if __name__ == "__main__":
     # Training: due agenti separati si affrontano
     print("\n=== Starting P1 vs P2 Agent Training ===")
-    Agent.train_vs_agent(num_games=100)
+    Agent.train_vs_agent(num_games=20)
 
     # Test: agenti casuali
     # print("\n=== Testing Random vs Random ===")
