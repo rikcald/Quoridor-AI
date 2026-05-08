@@ -1,10 +1,17 @@
 from collections import deque
+from pathlib import Path
 
 import torch
 import random
 import numpy as np
-from game_logic_Ai import P1, P2, TOTAL_ACTIONS, GridGameAi
+from game_logic_Ai import P1, P2, TOTAL_ACTIONS, NUM_MOVE_ACTIONS, GridGameAi
 from model import Linear_QNet, QTrainer
+from helper import LivePlotter
+
+# Definisci il percorso della cartella plots
+SCRIPT_DIR = Path(__file__).resolve().parent
+PLOTS_DIR = SCRIPT_DIR.parent / "plots"
+PLOTS_DIR.mkdir(exist_ok=True)
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
@@ -34,8 +41,8 @@ class Agent:
 
         # exploitation vs exploration tradeoff
         # decrese epsilon (aka exploration) as the number of games increases
-        self.epsilon = 80 - self.n_games
-        if random.randint(0, 200) < self.epsilon:
+        self.epsilon = max(5, 80 - self.n_games // 2)
+        if random.randint(0, 100) < self.epsilon:
             # print("random action")
             # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
             mask = env.get_action_mask(self.player_id)
@@ -47,6 +54,14 @@ class Agent:
                 raise Exception(
                     f"No valid actions available for player {self.player_id}"
                 )
+
+            # 80% di probabilità di scegliere una mossa valida, 20% di probabilità di scegliere un muro valido (se ci sono entrambi)
+            valid_moves = valid_actions[valid_actions < NUM_MOVE_ACTIONS]
+            valid_walls = valid_actions[valid_actions >= NUM_MOVE_ACTIONS]
+            if random.random() < 0.8 and len(valid_moves) > 0:
+                return int(np.random.choice(valid_moves))
+            elif len(valid_walls) > 0:
+                return int(np.random.choice(valid_walls))
 
             return int(np.random.choice(valid_actions))
 
@@ -96,11 +111,21 @@ class Agent:
         self.trainer.train_step(states, actions, rewards, next_states, dones)
 
 
-def train_agents(env, agent1, agent2, num_games=1000):
+def train_agents(env, agent1, agent2, plotter, num_games=1000):
     plot_scores_p1 = []
     plot_scores_p2 = []
     record_p1 = 0
     record_p2 = 0
+    stats = {
+        "steps": [],
+        "p1_rewards": [],
+        "p2_rewards": [],
+        "walls": [],
+        "p1_wins": [],
+        "p2_wins": [],
+        "exploration_rate_p1": [],
+        "exploration_rate_p2": [],
+    }
 
     # Check if agents are controlling the correct players
     if agent1.player_id == agent2.player_id:
@@ -112,7 +137,7 @@ def train_agents(env, agent1, agent2, num_games=1000):
         agent2.episode_reward = 0
         done = False
         step_count = 0
-
+        print(f"\n================ Starting Game {game_num + 1} ================")
         # DEBUG: traccia i tipi di azione scelti
         move_count = 0
         wall_count = 0
@@ -171,18 +196,30 @@ def train_agents(env, agent1, agent2, num_games=1000):
             record_p2 = final_score_p2
             agent2.model.save("Linear_QNet_model_P2.pth")
 
-        plot_scores_p1.append(final_score_p1)
-        plot_scores_p2.append(final_score_p2)
+        plot_scores_p1.append((final_score_p1, step_count, info.get("winner", None)))
+        plot_scores_p2.append((final_score_p2, step_count, info.get("winner", None)))
 
-        if agent1.n_games % 10 == 0:
+        stats["steps"].append(step_count)
+        stats["p1_rewards"].append(final_score_p1)
+        stats["p2_rewards"].append(final_score_p2)
+        stats["walls"].append(wall_count)
+        stats["p1_wins"].append(1 if info.get("winner") == P1 else 0)
+        stats["p2_wins"].append(1 if info.get("winner") == P2 else 0)
+        # Calcola l'exploration rate per il prossimo game
+        next_epsilon_p1 = max(5, 80 - agent1.n_games // 2)
+        next_epsilon_p2 = max(5, 80 - agent2.n_games // 2)
+        stats["exploration_rate_p1"].append(next_epsilon_p1)
+        stats["exploration_rate_p2"].append(next_epsilon_p2)
+        plotter.update(stats)
+        if agent1.n_games % 2 == 0:
             print(
                 f"\nGame {agent1.n_games} | "
                 f"P1 Score: {final_score_p1:.2f} (Record: {record_p1:.2f}) | "
                 f"P2 Score: {final_score_p2:.2f} (Record: {record_p2:.2f}) | "
                 f"Steps: {step_count} | "
-                f"Moves: {move_count}, Walls: {wall_count}, Invalid: {invalid_count}"
+                f"Moves: {move_count}, Walls: {wall_count}, Invalid: {invalid_count} | "
             )
-            # plot(plot_scores_p1)  # Opzionale: mostra i plot
+    plotter.fig.savefig(str(PLOTS_DIR / "training.png"), dpi=300, bbox_inches="tight")
 
 
 # Test code
@@ -193,7 +230,9 @@ if __name__ == "__main__":
     agent1 = Agent(P1)
     agent2 = Agent(P2)
     env = GridGameAi()
-    train_agents(env, agent1, agent2, num_games=10)
+
+    plotter = LivePlotter()
+    train_agents(env, agent1, agent2, plotter, num_games=500)
 
     # Test: agenti casuali
     # print("\n=== Testing Random vs Random ===")

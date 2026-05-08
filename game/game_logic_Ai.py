@@ -113,14 +113,22 @@ class GridGameAi:
 
         # --- reward ---
         if done:
-            reward = 1 if winner == player else -1
+            reward = 20 if winner == player else -20
         else:
-            reward = -0.01
+            reward = -0.05
 
         # --- stato ---
         state = self.get_state()
 
-        return state, reward, done, {}
+        return (
+            state,
+            reward,
+            done,
+            {
+                "invalid": False,
+                "winner": winner,
+            },
+        )
 
     def get_state(self):
         size = self.grid_size
