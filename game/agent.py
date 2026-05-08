@@ -13,12 +13,6 @@ LR = 0.001
 
 class Agent:
     def __init__(self, player_id):
-        """
-        Crea un agente per un player specifico (P1 o P2).
-
-        Args:
-            player_id: P1 o P2 - definisce quale player questo agente controlla
-        """
         self.player_id = player_id
         self.n_games = 0
         self.epsilon = 0  # For exploration
@@ -42,7 +36,7 @@ class Agent:
         # decrese epsilon (aka exploration) as the number of games increases
         self.epsilon = 80 - self.n_games
         if random.randint(0, 200) < self.epsilon:
-            print("random action")
+            # print("random action")
             # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
             mask = env.get_action_mask(self.player_id)
 
@@ -57,12 +51,11 @@ class Agent:
             return int(np.random.choice(valid_actions))
 
         else:
-            print("predicted action")
+            # print("predicted action")
             # Convert state to tensor and flatten it
             state_tensor = torch.tensor(state, dtype=torch.float).flatten()
-            prediction = self.model(
-                state_tensor.unsqueeze(0)
-            )  # Add batch dimension (1, 144)
+            # Add batch dimension (1, 144)
+            prediction = self.model(state_tensor.unsqueeze(0))
 
             # Get valid action mask
             mask = env.get_action_mask(self.player_id)
@@ -71,22 +64,8 @@ class Agent:
             # Apply mask to predictions: set invalid actions to very negative values
             masked_prediction = prediction.clone()
             masked_prediction[0, mask_tensor == 0] = -1e9  # -1e9 for invalid actions
-
             # Get the best valid action
             move = torch.argmax(masked_prediction).item()
-
-            # Double-check that the selected action is actually valid
-            if mask[move] != 1.0:
-                # If not valid (shouldn't happen), fall back to random valid action
-                valid_actions = np.where(mask == 1)[0]
-                if len(valid_actions) == 0:
-                    raise Exception(
-                        f"No valid actions available for player {self.player_id}"
-                    )
-                print(
-                    f"WARNING: Agent {self.player_id} selected invalid action {move}! Falling back to random."
-                )
-                move = np.random.choice(valid_actions)
 
             return move
 
@@ -115,102 +94,6 @@ class Agent:
         dones = np.array(dones)  # (batch_size,)
 
         self.trainer.train_step(states, actions, rewards, next_states, dones)
-
-    @staticmethod
-    def train_vs_agent(num_games=1000):
-        """
-        Metodo statico: due agenti separati si affrontano.
-        P1 e P2 sono agenti DISTINTI con memoria e rewards separati.
-        """
-        plot_scores_p1 = []
-        plot_scores_p2 = []
-        record_p1 = 0
-        record_p2 = 0
-
-        # Crea due agenti separati
-        agent_p1 = Agent(P1)
-        agent_p2 = Agent(P2)
-
-        for game_num in range(num_games):
-            game = GridGameAi()
-            agent_p1.episode_reward = 0
-            agent_p2.episode_reward = 0
-            done = False
-            step_count = 0
-
-            # DEBUG: traccia i tipi di azione scelti
-            move_count = 0
-            wall_count = 0
-            invalid_count = 0
-
-            while not done and step_count < 500:  # Max steps per evitare loop infiniti
-                # Determina chi deve giocare basato su game.turn
-                current_player = game.turn
-                state_old = game.get_state()
-
-                # Chiedi l'azione all'agente appropriato
-                if current_player == P1:
-                    action = agent_p1.get_action(state_old, game)
-                else:
-                    action = agent_p2.get_action(state_old, game)
-
-                # Esegui l'azione nel gioco
-                state_new, reward, done, info = game.step(action)
-
-                # DEBUG: classifica l'azione
-                if info.get("invalid", False):
-                    invalid_count += 1
-                elif action < 16:  # NUM_MOVE_ACTIONS
-                    move_count += 1
-                else:
-                    wall_count += 1
-
-                # Salva l'esperienza e il reward SOLO per l'agente che ha giocato
-                if current_player == P1:
-                    agent_p1.train_short_memory(
-                        state_old, action, reward, state_new, done
-                    )
-                    agent_p1.remember(state_old, action, reward, state_new, done)
-                    agent_p1.episode_reward += reward
-                else:
-                    agent_p2.train_short_memory(
-                        state_old, action, reward, state_new, done
-                    )
-                    agent_p2.remember(state_old, action, reward, state_new, done)
-                    agent_p2.episode_reward += reward
-
-                step_count += 1
-
-            # End of game - allenamento long memory per entrambi
-            agent_p1.n_games += 1
-            agent_p2.n_games += 1
-            agent_p1.train_long_memory()
-            agent_p2.train_long_memory()
-
-            # Salva i modelli se raggiungono il record
-            final_score_p1 = agent_p1.episode_reward
-            final_score_p2 = agent_p2.episode_reward
-
-            if final_score_p1 > record_p1:
-                record_p1 = final_score_p1
-                agent_p1.model.save("Linear_QNet_model_P1.pth")
-
-            if final_score_p2 > record_p2:
-                record_p2 = final_score_p2
-                agent_p2.model.save("Linear_QNet_model_P2.pth")
-
-            plot_scores_p1.append(final_score_p1)
-            plot_scores_p2.append(final_score_p2)
-
-            if agent_p1.n_games % 10 == 0:
-                print(
-                    f"\nGame {agent_p1.n_games} | "
-                    f"P1 Score: {final_score_p1:.2f} (Record: {record_p1:.2f}) | "
-                    f"P2 Score: {final_score_p2:.2f} (Record: {record_p2:.2f}) | "
-                    f"Steps: {step_count} | "
-                    f"Moves: {move_count}, Walls: {wall_count}, Invalid: {invalid_count}"
-                )
-                # plot(plot_scores_p1)  # Opzionale: mostra i plot
 
     def random_agent_action(self, env, player):
         # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
@@ -283,20 +166,110 @@ class Agent:
         print(f"Draws: {results['draw']}")
 
 
+def train_agents(env, agent1, agent2, num_games=1000):
+    plot_scores_p1 = []
+    plot_scores_p2 = []
+    record_p1 = 0
+    record_p2 = 0
+
+    # Check if agents are controlling the correct players
+    if agent1.player_id == agent2.player_id:
+        raise ValueError("Both agents cannot control the same player!")
+
+    for game_num in range(num_games):
+        env.reset()
+        agent1.episode_reward = 0
+        agent2.episode_reward = 0
+        done = False
+        step_count = 0
+
+        # DEBUG: traccia i tipi di azione scelti
+        move_count = 0
+        wall_count = 0
+        invalid_count = 0
+
+        while not done and step_count < 2500:  # Max steps per evitare loop infiniti
+            # Determina chi deve giocare basato su game.turn
+            current_player = env.turn
+            state_old = env.get_state()
+
+            # Chiedi l'azione all'agente appropriato
+            if current_player == P1:
+                action = agent1.get_action(state_old, env)
+            else:
+                action = agent2.get_action(state_old, env)
+
+            # Esegui l'azione nel gioco
+            state_new, reward, done, info = env.step(action)
+
+            # DEBUG: classifica l'azione
+            if info.get("invalid", False):
+                invalid_count += 1
+            elif action < 16:  # NUM_MOVE_ACTIONS
+                move_count += 1
+            else:
+                wall_count += 1
+
+            # Salva l'esperienza e il reward SOLO per l'agente che ha giocato
+            if current_player == P1:
+                agent1.train_short_memory(state_old, action, reward, state_new, done)
+                agent1.remember(state_old, action, reward, state_new, done)
+                agent1.episode_reward += reward
+            else:
+                agent2.train_short_memory(state_old, action, reward, state_new, done)
+                agent2.remember(state_old, action, reward, state_new, done)
+                agent2.episode_reward += reward
+
+            step_count += 1
+            # game.print_grid()
+
+        # End of game - allenamento long memory per entrambi
+        agent1.n_games += 1
+        agent2.n_games += 1
+        agent1.train_long_memory()
+        agent2.train_long_memory()
+
+        # Salva i modelli se raggiungono il record
+        final_score_p1 = agent1.episode_reward
+        final_score_p2 = agent2.episode_reward
+
+        if final_score_p1 > record_p1:
+            record_p1 = final_score_p1
+            agent1.model.save("Linear_QNet_model_P1.pth")
+
+        if final_score_p2 > record_p2:
+            record_p2 = final_score_p2
+            agent2.model.save("Linear_QNet_model_P2.pth")
+
+        plot_scores_p1.append(final_score_p1)
+        plot_scores_p2.append(final_score_p2)
+
+        if agent1.n_games % 10 == 0:
+            print(
+                f"\nGame {agent1.n_games} | "
+                f"P1 Score: {final_score_p1:.2f} (Record: {record_p1:.2f}) | "
+                f"P2 Score: {final_score_p2:.2f} (Record: {record_p2:.2f}) | "
+                f"Steps: {step_count} | "
+                f"Moves: {move_count}, Walls: {wall_count}, Invalid: {invalid_count}"
+            )
+            # plot(plot_scores_p1)  # Opzionale: mostra i plot
+
+
 # Test code
 
 if __name__ == "__main__":
     # Training: due agenti separati si affrontano
     print("\n=== Starting P1 vs P2 Agent Training ===")
-    Agent.train_vs_agent(num_games=20)
+    agent1 = Agent(P1)
+    agent2 = Agent(P2)
+    env = GridGameAi()
+    train_agents(env, agent1, agent2, num_games=10)
 
     # Test: agenti casuali
     # print("\n=== Testing Random vs Random ===")
     # agent = Agent(P1)
     # agent.test_random_vs_random(10)
 
-# TODO fix: nel get_action quando si sceglie un'azione random, sono disponibili anche quelle azioni (come up-jump) che dovrebbero essere illegali in quel momento.
-# TODO Questo perché il mask restituito da get_action_mask è errato (non tiene conto di tutte le regole del gioco). Di conseguenza, l'agente potrebbe scegliere un'azione che sembra valida secondo il mask, ma che in realtà non lo è. Per risolvere questo problema, è necessario correggere la logica all'interno di get_action_mask per assicurarsi che rifletta accuratamente tutte le regole del gioco e le condizioni attuali del board.
 
-# TODO fix: le mask sono rotte, visto che una volta piazzato il muro, printando la masked_prediction non ci sono valori negativi estremamente grandi,
-# TODO come se il mask non venisse applicato correttamente. Di conseguenza, l'agente potrebbe scegliere un'azione che sembra valida secondo il mask, ma che in realtà non lo è. Per risolvere questo problema, è necessario correggere la logica all'interno di get_action_mask per assicurarsi che rifletta accuratamente tutte le regole del gioco e le condizioni attuali del board.
+# TODO problema del piazzamento invalido risolto, ora il problema è che gli agenti non imparano in maniera efficace, prima di tutto io staccherei la funzione statica train_vs_agent
+# TODO dalla clase agent e la farei fuori, in modo tale che richieda env,agente1,agente2 e faccia le sue cose, magari cercare un modo per far condividere il modello agli agenti, non so perchè ma il fatto che siano due modelli mi puzza (oppure è una cosa buona perchè posso vedere magari CNN vs NN per esempio piu in la)
