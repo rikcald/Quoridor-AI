@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import os
 
 
-class Linear_QNet(nn.Module):
+class Basic_Linear_QNet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super().__init__()
         self.linear1 = nn.Linear(input_size, hidden_size)
@@ -15,6 +15,31 @@ class Linear_QNet(nn.Module):
         x = F.relu(self.linear1(x))
         x = self.linear2(x)
         return x
+
+    def save(self, file_name="Basic_Linear_QNet_model.pth"):
+        model_folder_path = "./model"
+        if not os.path.exists(model_folder_path):
+            os.makedirs(model_folder_path)
+
+        file_name = os.path.join(model_folder_path, file_name)
+        torch.save(self.state_dict(), file_name)
+
+
+class Linear_QNet(nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_size, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_size),
+        )
+
+    def forward(self, x):
+        return self.net(x)
 
     def save(self, file_name="Linear_QNet_model.pth"):
         model_folder_path = "./model"
