@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 import random
 import numpy as np
+from pygame_training_ui import TrainingUI
 from game_logic_Ai import P1, P2, TOTAL_ACTIONS, NUM_MOVE_ACTIONS, GridGameAi
 from model import Linear_QNet, QTrainer
 from helper import LivePlotter
@@ -29,7 +30,7 @@ class Agent:
         # if memory exceeds max, the oldest experience is removed (popleft)
         self.memory = deque(maxlen=MAX_MEMORY)
 
-        self.model = Linear_QNet(567, 256, TOTAL_ACTIONS)
+        self.model = Linear_QNet(567, TOTAL_ACTIONS)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     # Choose action based on environment's action mask
@@ -111,7 +112,7 @@ class Agent:
         self.trainer.train_step(states, actions, rewards, next_states, dones)
 
 
-def train_agents(env, agent1, agent2, plotter, num_games=1000):
+def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
     plot_scores_p1 = []
     plot_scores_p2 = []
     record_p1 = 0
@@ -143,7 +144,11 @@ def train_agents(env, agent1, agent2, plotter, num_games=1000):
         wall_count = 0
         invalid_count = 0
 
-        while not done and step_count < 2500:  # Max steps per evitare loop infiniti
+        # Inizializza la UI per la nuova partita
+        if ui is not None:
+            ui.new_game()
+
+        while not done and step_count < 500:  # Max steps per evitare loop infiniti
             # Determina chi deve giocare basato su game.turn
             current_player = env.turn
             state_old = env.get_state()
@@ -170,12 +175,18 @@ def train_agents(env, agent1, agent2, plotter, num_games=1000):
                 agent1.train_short_memory(state_old, action, reward, state_new, done)
                 agent1.remember(state_old, action, reward, state_new, done)
                 agent1.episode_reward += reward
+
             else:
                 agent2.train_short_memory(state_old, action, reward, state_new, done)
                 agent2.remember(state_old, action, reward, state_new, done)
                 agent2.episode_reward += reward
 
             step_count += 1
+
+            # Renderizza la partita se la UI è disponibile
+            if ui is not None:
+                ui.render(game_num=game_num + 1, step=step_count)
+
             # game.print_grid()
 
         # End of game - allenamento long memory per entrambi
@@ -230,9 +241,10 @@ if __name__ == "__main__":
     agent1 = Agent(P1)
     agent2 = Agent(P2)
     env = GridGameAi()
+    ui = TrainingUI(env, show_every=2, speed=30)
 
     plotter = LivePlotter()
-    train_agents(env, agent1, agent2, plotter, num_games=500)
+    train_agents(env, agent1, agent2, plotter, ui, num_games=500)
 
     # Test: agenti casuali
     # print("\n=== Testing Random vs Random ===")
