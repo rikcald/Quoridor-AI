@@ -87,6 +87,10 @@ class GridGameAi:
 
         invalid = False
 
+        # Salva le posizioni precedenti per controllare se si avvicina al traguardo
+        p1_pos_before = self.p1_pos.copy()
+        p2_pos_before = self.p2_pos.copy()
+
         # --- esegui azione ---
         if decoded[0] == "move":
             _, direction = decoded
@@ -114,6 +118,16 @@ class GridGameAi:
         # --- reward ---
         if done:
             reward = 20 if winner == player else -20
+
+        # Bonus +0.1 se si avvicina al traguardo
+        elif player == P1 and self.p1_pos[0] < p1_pos_before[0]:
+            # P1 si è avvicinato al traguardo (riga 0)
+            reward = 0.1
+        elif player == P2 and self.p2_pos[0] > p2_pos_before[0]:
+            # P2 si è avvicinato al traguardo (riga 8)
+            reward = 0.1
+
+        # Penalità -0.05 per ogni step per incentivare a vincere più velocemente
         else:
             reward = -0.05
 
