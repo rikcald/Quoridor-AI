@@ -1,5 +1,6 @@
 import numpy as np
 import pygame
+import torch
 from game_logic_Ai import GridGameAi, P1, P2
 
 pygame.init()
@@ -129,11 +130,11 @@ class TrainingUI:
 
     def _draw_walls(self):
         """Disegna i muri orizzontali e verticali."""
-        # Muri orizzontali
-        for row, col in self.env.horizontal_walls:
+        # Muri orizzontali di p1
+        for row, col in self.env.p1_horizontal_walls:
             pygame.draw.rect(
                 self.screen,
-                (0, 0, 0),
+                (0, 0, 200),
                 pygame.Rect(
                     col * self.CELL,
                     (row + 1) * self.CELL - 5,
@@ -142,11 +143,37 @@ class TrainingUI:
                 ),
             )
 
-        # Muri verticali
-        for row, col in self.env.vertical_walls:
+        # Muri verticali di p1
+        for row, col in self.env.p1_vertical_walls:
             pygame.draw.rect(
                 self.screen,
-                (0, 0, 0),
+                (0, 0, 200),
+                pygame.Rect(
+                    (col + 1) * self.CELL - 5,
+                    row * self.CELL,
+                    10,
+                    self.CELL * 2,
+                ),
+            )
+
+        # Muri orizzontali di p2
+        for row, col in self.env.p2_horizontal_walls:
+            pygame.draw.rect(
+                self.screen,
+                (200, 0, 0),
+                pygame.Rect(
+                    col * self.CELL,
+                    (row + 1) * self.CELL - 5,
+                    self.CELL * 2,
+                    10,
+                ),
+            )
+
+        # Muri verticali di p2
+        for row, col in self.env.p2_vertical_walls:
+            pygame.draw.rect(
+                self.screen,
+                (200, 0, 0),
                 pygame.Rect(
                     (col + 1) * self.CELL - 5,
                     row * self.CELL,
@@ -239,10 +266,26 @@ class TrainingUI:
         y_offset += line_height + 10
 
         # Ultimo muro posizionato
-        total_walls = len(self.env.horizontal_walls) + len(self.env.vertical_walls)
+        total_walls = (
+            len(self.env.p1_horizontal_walls)
+            + len(self.env.p1_vertical_walls)
+            + len(self.env.p2_horizontal_walls)
+            + len(self.env.p2_vertical_walls)
+        )
         txt_walls = font_small.render(f"Total walls: {total_walls}/20", True, (0, 0, 0))
         self.screen.blit(txt_walls, (panel_x + 10, y_offset))
 
     def close(self):
         """Chiudi la finestra pygame."""
         pygame.quit()
+
+
+if __name__ == "__main__":
+    modello = torch.load("./model/Linear_QNet_model_P1.pth")
+    print(type(modello))
+
+    if isinstance(modello, dict):
+        print(modello.keys())
+
+    for k, v in modello.items():
+        print(k, v.shape)
