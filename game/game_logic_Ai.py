@@ -31,6 +31,8 @@ TOTAL_ACTIONS = NUM_MOVE_ACTIONS + 2 * NUM_WALL_POS  # 144
 class GridGameAi:
     def __init__(self, grid_size=9):
         self.grid_size = grid_size
+        self.p1_reward_history = deque(maxlen=5)  # Ultimi 5 reward di P1
+        self.p2_reward_history = deque(maxlen=5)  # Ultimi 5 reward di P2
         self.reset()
 
     def reset(self):
@@ -42,13 +44,18 @@ class GridGameAi:
         self.grid[self.p1_pos[0], self.p1_pos[1]] = P1
         self.grid[self.p2_pos[0], self.p2_pos[1]] = P2
 
-        self.horizontal_walls = set()
-        self.vertical_walls = set()
+        self.p1_horizontal_walls = set()
+        self.p1_vertical_walls = set()
+        self.p2_horizontal_walls = set()
+        self.p2_vertical_walls = set()
 
         self.p1_available_walls = 10
         self.p2_available_walls = 10
 
         self.turn = P1
+
+        self.p1_reward_history.clear()
+        self.p2_reward_history.clear()
 
     # ------------ Reinforcement Learning Methods ------------
 
@@ -88,8 +95,8 @@ class GridGameAi:
         invalid = False
 
         # Salva le posizioni precedenti per controllare se si avvicina al traguardo
-        p1_pos_before = self.p1_pos.copy()
-        p2_pos_before = self.p2_pos.copy()
+        p1_old_pos = self.p1_pos.copy()
+        p2_old_pos = self.p2_pos.copy()
 
         # --- esegui azione ---
         if decoded[0] == "move":
@@ -115,21 +122,37 @@ class GridGameAi:
         winner = self.check_winner()
         done = winner is not None
 
-        # --- reward ---
+        # ---------- reward ----------
         if done:
             reward = 20 if winner == player else -20
 
-        # Bonus +0.1 se si avvicina al traguardo
-        elif player == P1 and self.p1_pos[0] < p1_pos_before[0]:
-            # P1 si è avvicinato al traguardo (riga 0)
-            reward = 0.1
-        elif player == P2 and self.p2_pos[0] > p2_pos_before[0]:
-            # P2 si è avvicinato al traguardo (riga 8)
-            reward = 0.1
-
-        # Penalità -0.05 per ogni step per incentivare a vincere più velocemente
         else:
-            reward = -0.05
+            if decoded[0] == "move":
+                # se ci si avvicina al traguardo, piccolo reward positivo, se ci si allontana, piccolo reward negativo, se si rimane alla stessa distanza [0], reward neutro
+                if player == P1:
+                    reward = (p1_old_pos[0] - self.p1_pos[0]) * 0.1
+                elif player == P2:
+                    reward = (self.p2_pos[0] - p2_old_pos[0]) * 0.1
+            else:
+                reward = -0.01  # caso muro: piccolo penalty per incentivare a muoversi invece di piazzare muri a caso
+
+            # Traccia finestra mobile di reward per rilevare stagnazione
+            if player == P1:
+                self.p1_reward_history.append(reward)
+                # se gli ultimi 5 reward sono tutti 0, penalizza con -0.3
+                if (
+                    len(self.p1_reward_history) >= 5
+                    and sum(self.p1_reward_history) == 0
+                ):
+                    reward -= 0.3
+            else:
+                self.p2_reward_history.append(reward)
+                # se gli ultimi 5 reward sono tutti 0, penalizza con -0.3
+                if (
+                    len(self.p2_reward_history) >= 5
+                    and sum(self.p2_reward_history) == 0
+                ):
+                    reward -= 0.3
 
         # --- stato ---
         state = self.get_state()
@@ -156,11 +179,15 @@ class GridGameAi:
         state[1, self.p2_pos[0], self.p2_pos[1]] = 1.0
 
         # --- muri orizzontali ---
-        for r, c in self.horizontal_walls:
+        for r, c in self.p1_horizontal_walls:
+            state[2, r, c] = 1.0
+        for r, c in self.p2_horizontal_walls:
             state[2, r, c] = 1.0
 
         # --- muri verticali ---
-        for r, c in self.vertical_walls:
+        for r, c in self.p1_vertical_walls:
+            state[3, r, c] = 1.0
+        for r, c in self.p2_vertical_walls:
             state[3, r, c] = 1.0
 
         # --- muri rimanenti (broadcast) ---
@@ -200,19 +227,6 @@ class GridGameAi:
                     mask[action_id] = 1.0
 
         return mask
-
-    # TODO remove
-    def random_agent_action(env, player):
-        mask = env.get_action_mask(player)
-
-        valid_actions = np.where(mask == 1)[0]
-
-        if len(valid_actions) == 0:
-            raise Exception("No valid actions available")
-
-        return np.random.choice(valid_actions)
-
-    # ---------------------------------------------------
 
     def move(self, player, move):
 
@@ -265,7 +279,7 @@ class GridGameAi:
         else:
             self.p2_pos = new_pos
 
-        print(f"Player {player} moves {new_pos} via {direction}")
+        # print(f"Player {player} moves {new_pos} via {direction}")
         self.turn = P2 if self.turn == P1 else P1
         return direction
 
@@ -289,7 +303,10 @@ class GridGameAi:
 
                 # muro verticale
                 if col < self.grid_size - 1:
-                    if (row, col) in self.vertical_walls:
+                    if (row, col) in self.p1_vertical_walls or (
+                        row,
+                        col,
+                    ) in self.p2_vertical_walls:
                         line += "|"
                     else:
                         line += " "
@@ -299,7 +316,10 @@ class GridGameAi:
             if row < self.grid_size - 1:
                 line = ""
                 for col in range(self.grid_size):
-                    if (row, col) in self.horizontal_walls:
+                    if (row, col) in self.p1_horizontal_walls or (
+                        row,
+                        col,
+                    ) in self.p2_horizontal_walls:
                         line += "──"
                     else:
                         line += "  "
@@ -389,9 +409,15 @@ class GridGameAi:
 
         # Piazzare il muro
         if orientation == "h":
-            self.horizontal_walls.add((row, col))
+            if player == P1:
+                self.p1_horizontal_walls.add((row, col))
+            else:
+                self.p2_horizontal_walls.add((row, col))
         else:
-            self.vertical_walls.add((row, col))
+            if player == P1:
+                self.p1_vertical_walls.add((row, col))
+            else:
+                self.p2_vertical_walls.add((row, col))
 
         # Decrementare i muri disponibili
         if player == P1:
@@ -400,9 +426,9 @@ class GridGameAi:
             self.p2_available_walls -= 1
 
         self.turn = P2 if self.turn == P1 else P1
-        print(
-            f"Player {player} placed a wall at {location} with orientation {orientation}"
-        )
+        # print(
+        #    f"Player {player} placed a wall at {location} with orientatio n {orientation}"
+        # )
         return True, None
 
     def _is_valid_wall(self, player, location, orientation):
@@ -422,18 +448,26 @@ class GridGameAi:
         # Controllare collisioni con altri muri
         if orientation == "h":
             if (
-                (row, col) in self.horizontal_walls
-                or (row, col) in self.vertical_walls
-                or (row, col + 1) in self.horizontal_walls
-                or (row, col - 1) in self.horizontal_walls
+                (row, col) in self.p1_horizontal_walls
+                or (row, col) in self.p2_horizontal_walls
+                or (row, col) in self.p1_vertical_walls
+                or (row, col) in self.p2_vertical_walls
+                or (row, col + 1) in self.p1_horizontal_walls
+                or (row, col + 1) in self.p2_horizontal_walls
+                or (row, col - 1) in self.p1_horizontal_walls
+                or (row, col - 1) in self.p2_horizontal_walls
             ):
                 return False
         elif orientation == "v":
             if (
-                (row, col) in self.vertical_walls
-                or (row, col) in self.horizontal_walls
-                or (row + 1, col) in self.vertical_walls
-                or (row - 1, col) in self.vertical_walls
+                (row, col) in self.p1_vertical_walls
+                or (row, col) in self.p2_vertical_walls
+                or (row, col) in self.p1_horizontal_walls
+                or (row, col) in self.p2_horizontal_walls
+                or (row + 1, col) in self.p1_vertical_walls
+                or (row + 1, col) in self.p2_vertical_walls
+                or (row - 1, col) in self.p1_vertical_walls
+                or (row - 1, col) in self.p2_vertical_walls
             ):
                 return False
         else:
@@ -442,17 +476,29 @@ class GridGameAi:
         # Controllare che il muro non blocchi completamente i percorsi
         # Simulare il piazzamento temporaneo
         if orientation == "h":
-            self.horizontal_walls.add((row, col))
+            if player == P1:
+                self.p1_horizontal_walls.add((row, col))
+            else:
+                self.p2_horizontal_walls.add((row, col))
         else:
-            self.vertical_walls.add((row, col))
+            if player == P1:
+                self.p1_vertical_walls.add((row, col))
+            else:
+                self.p2_vertical_walls.add((row, col))
 
         # Verificare se entrambi i giocatori hanno ancora un percorso
         valid = self._players_have_path()
         # Rollback della simulazione
         if orientation == "h":
-            self.horizontal_walls.remove((row, col))
+            if player == P1:
+                self.p1_horizontal_walls.remove((row, col))
+            else:
+                self.p2_horizontal_walls.remove((row, col))
         else:
-            self.vertical_walls.remove((row, col))
+            if player == P1:
+                self.p1_vertical_walls.remove((row, col))
+            else:
+                self.p2_vertical_walls.remove((row, col))
 
         return valid
 
@@ -465,9 +511,15 @@ class GridGameAi:
             row = min(row1, row2)
 
             # muro orizzontale blocca
-            if (row, col1) in self.horizontal_walls:
+            if (row, col1) in self.p1_horizontal_walls or (
+                row,
+                col1,
+            ) in self.p2_horizontal_walls:
                 return True
-            if (row, col1 - 1) in self.horizontal_walls:
+            if (row, col1 - 1) in self.p1_horizontal_walls or (
+                row,
+                col1 - 1,
+            ) in self.p2_horizontal_walls:
                 return True
 
         # movimento orizzontale (left/right)
@@ -475,9 +527,15 @@ class GridGameAi:
             col = min(col1, col2)
 
             # muro verticale blocca
-            if (row1, col) in self.vertical_walls:
+            if (row1, col) in self.p1_vertical_walls or (
+                row1,
+                col,
+            ) in self.p2_vertical_walls:
                 return True
-            if (row1 - 1, col) in self.vertical_walls:
+            if (row1 - 1, col) in self.p1_vertical_walls or (
+                row1 - 1,
+                col,
+            ) in self.p2_vertical_walls:
                 return True
 
         return False
