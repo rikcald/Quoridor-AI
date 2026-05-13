@@ -1,6 +1,7 @@
 from collections import deque
 from pathlib import Path
 
+import wandb
 import torch
 import random
 import numpy as np
@@ -16,6 +17,12 @@ PLOTS_DIR.mkdir(exist_ok=True)
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
+
+NUM_GAMES = 500  # epochs
+MAX_STEPS_PER_GAME = 400  # Per evitare loop infiniti in partite troppo lunghe
+RANDOM_MOVE_WALL_PROB = 0.5  # Probabilità di scegliere una mossa valida vs un muro valido durante l'esplorazione
+
+
 LR = 0.001
 
 
@@ -24,6 +31,7 @@ class Agent:
         self.player_id = player_id
         self.n_games = 0
         self.epsilon = 0  # For exploration
+        self.epsilon_decay = 4  # Decay rate for exploration
         self.gamma = 0.9  # Discount rate
         self.episode_reward = 0  # Reward SOLO per questo agente
 
@@ -42,7 +50,7 @@ class Agent:
 
         # exploitation vs exploration tradeoff
         # decrese epsilon (aka exploration) as the number of games increases
-        self.epsilon = max(5, 80 - self.n_games // 2)
+        self.epsilon = max(5, 80 - self.n_games // self.epsilon_decay)
         if random.randint(0, 100) < self.epsilon:
             # print("random action")
             # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
@@ -56,10 +64,10 @@ class Agent:
                     f"No valid actions available for player {self.player_id}"
                 )
 
-            # 80% di probabilità di scegliere una mossa valida, 20% di probabilità di scegliere un muro valido (se ci sono entrambi)
+            # 50% di probabilità di scegliere una mossa valida, 50% di probabilità di scegliere un muro valido (se ci sono entrambi)
             valid_moves = valid_actions[valid_actions < NUM_MOVE_ACTIONS]
             valid_walls = valid_actions[valid_actions >= NUM_MOVE_ACTIONS]
-            if random.random() < 0.8 and len(valid_moves) > 0:
+            if random.random() < RANDOM_MOVE_WALL_PROB and len(valid_moves) > 0:
                 return int(np.random.choice(valid_moves))
             elif len(valid_walls) > 0:
                 return int(np.random.choice(valid_walls))
@@ -67,7 +75,6 @@ class Agent:
             return int(np.random.choice(valid_actions))
 
         else:
-            # print("predicted action")
             # Convert state to tensor and flatten it
             state_tensor = torch.tensor(state, dtype=torch.float).flatten()
             # Add batch dimension (1, 144)
@@ -148,7 +155,9 @@ def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
         if ui is not None:
             ui.new_game()
 
-        while not done and step_count < 500:  # Max steps per evitare loop infiniti
+        while (
+            not done and step_count < MAX_STEPS_PER_GAME
+        ):  # Max steps per evitare loop infiniti
             # Determina chi deve giocare basato su game.turn
             current_player = env.turn
             state_old = env.get_state()
@@ -189,6 +198,11 @@ def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
 
             # game.print_grid()
 
+        # Penalità pesante se la partita raggiunge il timeout (nessuno vince entro 500 step)
+        if step_count >= MAX_STEPS_PER_GAME:
+            agent1.episode_reward -= 5  # Penalità pesante per non aver terminato
+            agent2.episode_reward -= 5
+
         # End of game - allenamento long memory per entrambi
         agent1.n_games += 1
         agent2.n_games += 1
@@ -217,11 +231,27 @@ def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
         stats["p1_wins"].append(1 if info.get("winner") == P1 else 0)
         stats["p2_wins"].append(1 if info.get("winner") == P2 else 0)
         # Calcola l'exploration rate per il prossimo game
-        next_epsilon_p1 = max(5, 80 - agent1.n_games // 2)
-        next_epsilon_p2 = max(5, 80 - agent2.n_games // 2)
+        next_epsilon_p1 = max(5, 80 - agent1.n_games // agent1.epsilon_decay)
+        next_epsilon_p2 = max(5, 80 - agent2.n_games // agent2.epsilon_decay)
         stats["exploration_rate_p1"].append(next_epsilon_p1)
         stats["exploration_rate_p2"].append(next_epsilon_p2)
         plotter.update(stats)
+
+        # Logga le metriche su Weights & Biases
+        """run.log(
+            {
+                "steps_per_game": step_count,
+                "moves_per_game": move_count,
+                "walls_per_game": wall_count,
+                "p1_reward": final_score_p1,
+                "p2_reward": final_score_p2,
+                "cumulative_p1_wins": sum(stats["p1_wins"]),
+                "cumulative_p2_wins": sum(stats["p2_wins"]),
+                "epsilon_p1": next_epsilon_p1,
+                "epsilon_p2": next_epsilon_p2,
+            }
+        )
+        """
         if agent1.n_games % 2 == 0:
             print(
                 f"\nGame {agent1.n_games} | "
@@ -230,12 +260,34 @@ def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
                 f"Steps: {step_count} | "
                 f"Moves: {move_count}, Walls: {wall_count}, Invalid: {invalid_count} | "
             )
-    plotter.fig.savefig(str(PLOTS_DIR / "training.png"), dpi=300, bbox_inches="tight")
+    plotter.fig.savefig(
+        str(PLOTS_DIR / f"training_{'run.id'}.png"), dpi=300, bbox_inches="tight"
+    )
+    """run.log({"training_plot": wandb.Image(str(PLOTS_DIR / f"training_{run.id}.png"))})"""
 
 
 # Test code
 
 if __name__ == "__main__":
+    # Inizializza Weights & Biases run per il monitoraggio del training
+    """run = wandb.init(
+        project="quoridor-rl",
+        name="training_v0",
+        config={
+            "architecture": "Linear_QNet",
+            "epoches": NUM_GAMES,
+            "max_steps_per_game": MAX_STEPS_PER_GAME,
+            "learning_rate": LR,
+            "gamma": 0.9,
+            "epsilon_start": 80,
+            "epsilon_decay": 4,
+            "epsilon_min": 5,
+            "batch_size": BATCH_SIZE,
+            "max_memory": MAX_MEMORY,
+            "reward_structure": "win=+20, lose=-20, correct_direction=+0.1, wrong_direction=-0.1, timeout=-5",
+        },
+    )"""
+
     # Training: due agenti separati si affrontano
     print("\n=== Starting P1 vs P2 Agent Training ===")
     agent1 = Agent(P1)
@@ -244,13 +296,6 @@ if __name__ == "__main__":
     ui = TrainingUI(env, show_every=2, speed=30)
 
     plotter = LivePlotter()
-    train_agents(env, agent1, agent2, plotter, ui, num_games=500)
-
-    # Test: agenti casuali
-    # print("\n=== Testing Random vs Random ===")
-    # agent = Agent(P1)
-    # agent.test_random_vs_random(10)
-
-
-# TODO problema del piazzamento invalido risolto, ora il problema è che gli agenti non imparano in maniera efficace, prima di tutto io staccherei la funzione statica train_vs_agent
-# TODO dalla clase agent e la farei fuori, in modo tale che richieda env,agente1,agente2 e faccia le sue cose, magari cercare un modo per far condividere il modello agli agenti, non so perchè ma il fatto che siano due modelli mi puzza (oppure è una cosa buona perchè posso vedere magari CNN vs NN per esempio piu in la)
+    train_agents(env, agent1, agent2, plotter, ui, num_games=NUM_GAMES)
+    # Al termine del training, chiudi il run di Weights & Biases
+    """run.finish()"""
