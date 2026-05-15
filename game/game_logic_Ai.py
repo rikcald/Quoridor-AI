@@ -50,6 +50,11 @@ class GridGameAi:
         self.grid_size = grid_size
         self.p1_reward_history = deque(maxlen=5)
         self.p2_reward_history = deque(maxlen=5)
+        self.invalid_action_penalty = -0.1
+        self.win_reward = 20.0
+        self.wall_placement_penalty = -0.01
+        self.progress_reward_scale = 0.1
+        self.stagnation_penalty = -0.3
         self.reset()
 
     def reset(self):
@@ -169,41 +174,72 @@ class GridGameAi:
                 invalid = True
 
         if invalid:
-            return self.get_state(), -0.1, False, {"invalid": True}
+            return self.get_state(), self.invalid_action_penalty, False, {
+                "invalid": True,
+                "reward_components": {
+                    "invalid_action_penalty": self.invalid_action_penalty
+                },
+            }
 
         winner = self.check_winner()
         done = winner is not None
 
-        if done:
-            reward = 20 if winner == player else -20
-
-        else:
-            if decoded[0] == "move":
-                if player == P1:
-                    reward = (p1_old_pos[0] - self.p1_pos[0]) * 0.1
-                else:
-                    reward = (self.p2_pos[0] - p2_old_pos[0]) * 0.1
-            else:
-                reward = -0.01
-
-            if player == P1:
-                self.p1_reward_history.append(reward)
-                if (
-                    len(self.p1_reward_history) >= 5
-                    and sum(self.p1_reward_history) == 0
-                ):
-                    reward -= 0.3
-            else:
-                self.p2_reward_history.append(reward)
-                if (
-                    len(self.p2_reward_history) >= 5
-                    and sum(self.p2_reward_history) == 0
-                ):
-                    reward -= 0.3
+        reward, reward_components = self._compute_reward(
+            player=player,
+            decoded_action=decoded,
+            done=done,
+            winner=winner,
+            p1_old_pos=p1_old_pos,
+            p2_old_pos=p2_old_pos,
+        )
 
         state = self.get_state()
 
-        return state, reward, done, {"invalid": False, "winner": winner}
+        return state, reward, done, {
+            "invalid": False,
+            "winner": winner,
+            "reward_components": reward_components,
+        }
+
+    def _compute_reward(
+        self, player, decoded_action, done, winner, p1_old_pos, p2_old_pos
+    ):
+        reward_components = {}
+
+        if done:
+            terminal_reward = self.win_reward if winner == player else -self.win_reward
+            reward_components["terminal_reward"] = terminal_reward
+            return terminal_reward, reward_components
+
+        if decoded_action[0] == "move":
+            # Reward only net progress toward the player's own goal row:
+            # e.g. P1 moving from row 8 -> 7 yields +0.1, P2 moving from row 0 -> 1 yields +0.1.
+            if player == P1:
+                progress_reward = (
+                    (p1_old_pos[0] - self.p1_pos[0]) * self.progress_reward_scale
+                )
+            else:
+                progress_reward = (
+                    (self.p2_pos[0] - p2_old_pos[0]) * self.progress_reward_scale
+                )
+            reward = progress_reward
+            reward_components["progress_reward"] = progress_reward
+        else:
+            reward = self.wall_placement_penalty
+            reward_components["wall_placement_penalty"] = (
+                self.wall_placement_penalty
+            )
+
+        reward_history = self.p1_reward_history if player == P1 else self.p2_reward_history
+        reward_history.append(reward)
+
+        # Penalize local stagnation when the last 5 shaped rewards sum to 0:
+        # e.g. repeated sideways moves with no progress trigger an extra penalty.
+        if len(reward_history) >= 5 and sum(reward_history) == 0:
+            reward += self.stagnation_penalty
+            reward_components["stagnation_penalty"] = self.stagnation_penalty
+
+        return reward, reward_components
 
     def get_state_player_centric(self, player):
         size = self.grid_size
