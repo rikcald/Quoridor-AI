@@ -38,7 +38,7 @@ class Agent:
         # if memory exceeds max, the oldest experience is removed (popleft)
         self.memory = deque(maxlen=MAX_MEMORY)
 
-        self.model = Linear_QNet(567, TOTAL_ACTIONS)
+        self.model = Linear_QNet(486, TOTAL_ACTIONS)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     # Choose action based on environment's action mask
@@ -110,10 +110,10 @@ class Agent:
         states, actions, rewards, next_states, dones = zip(*mini_sample)
 
         # Convert to numpy arrays and stacks for batch training
-        states = np.array(states)  # (batch_size, 7, 9, 9)
+        states = np.array(states)  # (batch_size, 6, 9, 9)
         actions = np.array(actions)  # (batch_size,)
         rewards = np.array(rewards)  # (batch_size,)
-        next_states = np.array(next_states)  # (batch_size, 7, 9, 9)
+        next_states = np.array(next_states)  # (batch_size, 6, 9, 9)
         dones = np.array(dones)  # (batch_size,)
 
         self.trainer.train_step(states, actions, rewards, next_states, dones)
