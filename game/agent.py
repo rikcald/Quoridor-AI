@@ -1,5 +1,8 @@
 from collections import deque
 from pathlib import Path
+import csv
+import json
+from datetime import datetime
 
 import wandb
 import torch
@@ -10,63 +13,73 @@ from game_logic_Ai import P1, P2, TOTAL_ACTIONS, NUM_MOVE_ACTIONS, GridGameAi
 from model import Linear_QNet, QTrainer
 from helper import LivePlotter
 
-# Definisci il percorso della cartella plots
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLOTS_DIR = SCRIPT_DIR.parent / "plots"
 PLOTS_DIR.mkdir(exist_ok=True)
+MODEL_DIR = SCRIPT_DIR.parent / "model"
+MODEL_DIR.mkdir(exist_ok=True)
+METRICS_DIR = SCRIPT_DIR.parent / "training_metrics"
+METRICS_DIR.mkdir(exist_ok=True)
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 MAX_MEMORY = 100000
 BATCH_SIZE = 1000
 
-NUM_GAMES = 500  # epochs
-MAX_STEPS_PER_GAME = 400  # Per evitare loop infiniti in partite troppo lunghe
-RANDOM_MOVE_WALL_PROB = 0.5  # Probabilità di scegliere una mossa valida vs un muro valido durante l'esplorazione
-
+NUM_GAMES = 500
+MAX_STEPS_PER_GAME = 400
+RANDOM_MOVE_WALL_PROB = 0.5
 
 LR = 0.001
+TIMEOUT_PENALTY = -5.0
 
 
-class Agent:
-    def __init__(self, player_id):
-        self.player_id = player_id
+class SelfPlayAgent:
+    def __init__(self):
         self.n_games = 0
-        self.epsilon = 0  # For exploration
-        self.epsilon_decay = 4  # Decay rate for exploration
-        self.gamma = 0.9  # Discount rate
-        self.episode_reward = 0  # Reward SOLO per questo agente
-
-        # if memory exceeds max, the oldest experience is removed (popleft)
+        self.epsilon = 0
+        self.epsilon_decay = 4
+        self.gamma = 0.9
         self.memory = deque(maxlen=MAX_MEMORY)
-
+        # One shared network learns from both sides of the board.
+        # e.g. the same weights act as P1 on one turn and P2 on the next.
         self.model = Linear_QNet(486, TOTAL_ACTIONS)
+        # The trainer uses an alternating zero-sum bootstrap:
+        # e.g. after my move, the next canonical state belongs to the opponent,
+        # so its best value is subtracted instead of added.
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
-    # Choose action based on environment's action mask
-    def get_action(self, state, env):
-        """
-        L'agente sceglie un'azione per il suo player.
-        Non è necessario passare il player poiché l'agente conosce il suo player_id.
-        """
+    def save_checkpoint(self, file_name, extra_metadata=None):
+        # Save richer training state than a plain model-only .pth file:
+        # e.g. n_games and epsilon are useful if later you want to resume training.
+        checkpoint = {
+            "model_state_dict": self.model.state_dict(),
+            "n_games": self.n_games,
+            "epsilon": self.epsilon,
+            "gamma": self.gamma,
+        }
 
-        # exploitation vs exploration tradeoff
-        # decrese epsilon (aka exploration) as the number of games increases
+        if extra_metadata is not None:
+            checkpoint["metadata"] = extra_metadata
+
+        torch.save(checkpoint, MODEL_DIR / file_name)
+
+    def get_action(self, state, env, player):
+        # Self-play keeps a single exploration schedule because the policy is shared.
         self.epsilon = max(5, 80 - self.n_games // self.epsilon_decay)
-        if random.randint(0, 100) < self.epsilon:
-            # print("random action")
-            # get action mask for the current player (1 for valid, 0 for invalid) e.g. [1, 0, 1, 1, 0, 1] where indices correspond to actions and values indicate validity
-            mask = env.get_action_mask(self.player_id)
 
-            # get valid action indices e.g. [0, 2, 5]
+        if random.randint(0, 100) < self.epsilon:
+            mask = env.get_action_mask(player)
             valid_actions = np.where(mask == 1)[0]
 
             if len(valid_actions) == 0:
-                raise Exception(
-                    f"No valid actions available for player {self.player_id}"
-                )
+                raise Exception(f"No valid actions available for player {player}")
 
-            # 50% di probabilità di scegliere una mossa valida, 50% di probabilità di scegliere un muro valido (se ci sono entrambi)
             valid_moves = valid_actions[valid_actions < NUM_MOVE_ACTIONS]
             valid_walls = valid_actions[valid_actions >= NUM_MOVE_ACTIONS]
+
+            # Mild bias toward movement during exploration:
+            # e.g. early training should still discover progress toward the goal,
+            # instead of wasting most turns on random wall placements.
             if random.random() < RANDOM_MOVE_WALL_PROB and len(valid_moves) > 0:
                 return int(np.random.choice(valid_moves))
             elif len(valid_walls) > 0:
@@ -74,56 +87,49 @@ class Agent:
 
             return int(np.random.choice(valid_actions))
 
-        else:
-            # Convert state to tensor and flatten it
-            state_tensor = torch.tensor(state, dtype=torch.float).flatten()
-            # Add batch dimension (1, 144)
-            prediction = self.model(state_tensor.unsqueeze(0))
+        # Illegal actions are masked before argmax:
+        # e.g. a high-Q wall action is ignored if that wall cannot be placed now.
+        state_tensor = torch.tensor(state, dtype=torch.float).flatten()
+        prediction = self.model(state_tensor.unsqueeze(0))
 
-            # Get valid action mask
-            mask = env.get_action_mask(self.player_id)
-            mask_tensor = torch.tensor(mask, dtype=torch.float)
+        mask = env.get_action_mask(player)
+        mask_tensor = torch.tensor(mask, dtype=torch.float)
 
-            # Apply mask to predictions: set invalid actions to very negative values
-            masked_prediction = prediction.clone()
-            masked_prediction[0, mask_tensor == 0] = -1e9  # -1e9 for invalid actions
-            # Get the best valid action
-            move = torch.argmax(masked_prediction).item()
-
-            return move
+        masked_prediction = prediction.clone()
+        masked_prediction[0, mask_tensor == 0] = -1e9
+        return torch.argmax(masked_prediction).item()
 
     def remember(self, state, action, reward, next_state, done):
-        # store experience in memory
         self.memory.append((state, action, reward, next_state, done))
 
     def train_short_memory(self, state, action, reward, next_state, done):
-        # Train the model on a single experience (state, action, reward, next_state, done)
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def train_long_memory(self):
-        # Train the model on a batch of experiences from memory
+        if not self.memory:
+            return
+
+        # Replay samples contain experiences generated by both players, but all of them
+        # live in the same canonical perspective space used for self-play.
         if len(self.memory) > BATCH_SIZE:
-            mini_sample = random.sample(self.memory, BATCH_SIZE)  # list of tuples
+            mini_sample = random.sample(self.memory, BATCH_SIZE)
         else:
             mini_sample = self.memory
 
         states, actions, rewards, next_states, dones = zip(*mini_sample)
 
-        # Convert to numpy arrays and stacks for batch training
-        states = np.array(states)  # (batch_size, 6, 9, 9)
-        actions = np.array(actions)  # (batch_size,)
-        rewards = np.array(rewards)  # (batch_size,)
-        next_states = np.array(next_states)  # (batch_size, 6, 9, 9)
-        dones = np.array(dones)  # (batch_size,)
+        states = np.array(states)
+        actions = np.array(actions)
+        rewards = np.array(rewards)
+        next_states = np.array(next_states)
+        dones = np.array(dones)
 
         self.trainer.train_step(states, actions, rewards, next_states, dones)
 
 
-def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
-    plot_scores_p1 = []
-    plot_scores_p2 = []
-    record_p1 = 0
-    record_p2 = 0
+def train_self_play(env, agent, plotter, ui=None, num_games=1000):
+    record_score = float("-inf")
+    best_win_balance = float("-inf")
     stats = {
         "steps": [],
         "p1_rewards": [],
@@ -133,146 +139,207 @@ def train_agents(env, agent1, agent2, plotter, ui=None, num_games=1000):
         "p2_wins": [],
         "exploration_rate_p1": [],
         "exploration_rate_p2": [],
+        "invalid_moves": [],
+        "shared_scores": [],
+        "timeouts": [],
     }
 
-    # Check if agents are controlling the correct players
-    if agent1.player_id == agent2.player_id:
-        raise ValueError("Both agents cannot control the same player!")
+    metrics_csv_path = METRICS_DIR / f"self_play_metrics_{RUN_TIMESTAMP}.csv"
+    metrics_json_path = METRICS_DIR / f"self_play_summary_{RUN_TIMESTAMP}.json"
 
     for game_num in range(num_games):
+        # Each episode is symmetric self-play: turns alternate in the environment,
+        # but both turns are controlled by the same network instance.
         env.reset()
-        agent1.episode_reward = 0
-        agent2.episode_reward = 0
         done = False
         step_count = 0
-        print(f"\n================ Starting Game {game_num + 1} ================")
-        # DEBUG: traccia i tipi di azione scelti
+        p1_episode_reward = 0.0
+        p2_episode_reward = 0.0
+
+        print(
+            f"\n================ Starting Self-Play Game {game_num + 1} ================"
+        )
+
         move_count = 0
         wall_count = 0
         invalid_count = 0
 
-        # Inizializza la UI per la nuova partita
         if ui is not None:
             ui.new_game()
 
-        while (
-            not done and step_count < MAX_STEPS_PER_GAME
-        ):  # Max steps per evitare loop infiniti
-            # Determina chi deve giocare basato su game.turn
+        while not done and step_count < MAX_STEPS_PER_GAME:
             current_player = env.turn
             state_old = env.get_state()
+            action = agent.get_action(state_old, env, current_player)
 
-            # Chiedi l'azione all'agente appropriato
-            if current_player == P1:
-                action = agent1.get_action(state_old, env)
-            else:
-                action = agent2.get_action(state_old, env)
+            _, reward, done, info = env.step(action)
 
-            # Esegui l'azione nel gioco
-            state_new, reward, done, info = env.step(action)
+            # The environment switches turn inside step(). For shared self-play we keep
+            # the transition in the acting player's canonical frame:
+            # e.g. if P1 just moved, next_state must still be encoded from P1's view.
+            next_state_for_actor = env.get_state_player_centric(current_player)
 
-            # DEBUG: classifica l'azione
             if info.get("invalid", False):
                 invalid_count += 1
-            elif action < 16:  # NUM_MOVE_ACTIONS
+            elif action < NUM_MOVE_ACTIONS:
                 move_count += 1
             else:
                 wall_count += 1
 
-            # Salva l'esperienza e il reward SOLO per l'agente che ha giocato
-            if current_player == P1:
-                agent1.train_short_memory(state_old, action, reward, state_new, done)
-                agent1.remember(state_old, action, reward, state_new, done)
-                agent1.episode_reward += reward
+            agent.train_short_memory(
+                state_old, action, reward, next_state_for_actor, done
+            )
+            agent.remember(state_old, action, reward, next_state_for_actor, done)
 
+            if current_player == P1:
+                p1_episode_reward += reward
             else:
-                agent2.train_short_memory(state_old, action, reward, state_new, done)
-                agent2.remember(state_old, action, reward, state_new, done)
-                agent2.episode_reward += reward
+                p2_episode_reward += reward
 
             step_count += 1
 
-            # Renderizza la partita se la UI è disponibile
             if ui is not None:
                 ui.render(game_num=game_num + 1, step=step_count)
 
-            # game.print_grid()
+        timeout_reached = step_count >= MAX_STEPS_PER_GAME
 
-        # Penalità pesante se la partita raggiunge il timeout (nessuno vince entro 500 step)
-        if step_count >= MAX_STEPS_PER_GAME:
-            agent1.episode_reward -= 5  # Penalità pesante per non aver terminato
-            agent2.episode_reward -= 5
+        if timeout_reached:
+            # Timeout means the shared policy failed to convert the game into a result,
+            # so both sides receive the same penalty.
+            p1_episode_reward += TIMEOUT_PENALTY
+            p2_episode_reward += TIMEOUT_PENALTY
 
-        # End of game - allenamento long memory per entrambi
-        agent1.n_games += 1
-        agent2.n_games += 1
-        agent1.train_long_memory()
-        agent2.train_long_memory()
+        agent.n_games += 1
+        agent.train_long_memory()
 
-        # Salva i modelli se raggiungono il record
-        final_score_p1 = agent1.episode_reward
-        final_score_p2 = agent2.episode_reward
-
-        if final_score_p1 > record_p1:
-            record_p1 = final_score_p1
-            agent1.model.save("Linear_QNet_model_P1.pth")
-
-        if final_score_p2 > record_p2:
-            record_p2 = final_score_p2
-            agent2.model.save("Linear_QNet_model_P2.pth")
-
-        plot_scores_p1.append((final_score_p1, step_count, info.get("winner", None)))
-        plot_scores_p2.append((final_score_p2, step_count, info.get("winner", None)))
+        # Save the shared model when the combined game score improves.
+        # e.g. this rewards faster wins and fewer invalid/stalled games on both sides.
+        final_score = p1_episode_reward + p2_episode_reward
+        if final_score > record_score:
+            record_score = final_score
+            agent.save_checkpoint(
+                "Linear_QNet_self_play_best_score.pth",
+                extra_metadata={
+                    "record_score": record_score,
+                    "game_num": game_num + 1,
+                    "step_count": step_count,
+                },
+            )
 
         stats["steps"].append(step_count)
-        stats["p1_rewards"].append(final_score_p1)
-        stats["p2_rewards"].append(final_score_p2)
+        stats["p1_rewards"].append(p1_episode_reward)
+        stats["p2_rewards"].append(p2_episode_reward)
         stats["walls"].append(wall_count)
         stats["p1_wins"].append(1 if info.get("winner") == P1 else 0)
         stats["p2_wins"].append(1 if info.get("winner") == P2 else 0)
-        # Calcola l'exploration rate per il prossimo game
-        next_epsilon_p1 = max(5, 80 - agent1.n_games // agent1.epsilon_decay)
-        next_epsilon_p2 = max(5, 80 - agent2.n_games // agent2.epsilon_decay)
-        stats["exploration_rate_p1"].append(next_epsilon_p1)
-        stats["exploration_rate_p2"].append(next_epsilon_p2)
+        stats["invalid_moves"].append(invalid_count)
+        stats["shared_scores"].append(final_score)
+        stats["timeouts"].append(1 if timeout_reached else 0)
+
+        next_epsilon = max(5, 80 - agent.n_games // agent.epsilon_decay)
+        # The model is shared, but we log the same epsilon on both curves to keep
+        # the existing plotting layout stable.
+        stats["exploration_rate_p1"].append(next_epsilon)
+        stats["exploration_rate_p2"].append(next_epsilon)
         plotter.update(stats)
 
-        # Logga le metriche su Weights & Biases
-        """run.log(
+        winner = info.get("winner")
+        win_balance = stats["p1_wins"][-1] - stats["p2_wins"][-1]
+        if winner is not None and win_balance > best_win_balance:
+            best_win_balance = win_balance
+
+        # CSV is append-only so long runs remain inspectable even if training stops early.
+        _append_metrics_row(
+            metrics_csv_path,
             {
-                "steps_per_game": step_count,
-                "moves_per_game": move_count,
-                "walls_per_game": wall_count,
-                "p1_reward": final_score_p1,
-                "p2_reward": final_score_p2,
-                "cumulative_p1_wins": sum(stats["p1_wins"]),
-                "cumulative_p2_wins": sum(stats["p2_wins"]),
-                "epsilon_p1": next_epsilon_p1,
-                "epsilon_p2": next_epsilon_p2,
-            }
+                "game": game_num + 1,
+                "steps": step_count,
+                "winner": winner,
+                "p1_reward": round(p1_episode_reward, 4),
+                "p2_reward": round(p2_episode_reward, 4),
+                "shared_score": round(final_score, 4),
+                "moves": move_count,
+                "walls": wall_count,
+                "invalid_moves": invalid_count,
+                "timeout": int(timeout_reached),
+                "epsilon": next_epsilon,
+            },
         )
-        """
-        if agent1.n_games % 2 == 0:
+
+        agent.save_checkpoint(
+            "Linear_QNet_self_play_latest.pth",
+            extra_metadata={
+                "game_num": game_num + 1,
+                "record_score": record_score,
+                "last_shared_score": final_score,
+            },
+        )
+
+        _write_metrics_summary(
+            metrics_json_path,
+            stats,
+            latest_game=game_num + 1,
+            record_score=record_score,
+            latest_winner=winner,
+        )
+
+        if agent.n_games % 2 == 0:
             print(
-                f"\nGame {agent1.n_games} | "
-                f"P1 Score: {final_score_p1:.2f} (Record: {record_p1:.2f}) | "
-                f"P2 Score: {final_score_p2:.2f} (Record: {record_p2:.2f}) | "
+                f"\nGame {agent.n_games} | "
+                f"P1 Score: {p1_episode_reward:.2f} | "
+                f"P2 Score: {p2_episode_reward:.2f} | "
+                f"Shared Score: {final_score:.2f} (Record: {record_score:.2f}) | "
                 f"Steps: {step_count} | "
                 f"Moves: {move_count}, Walls: {wall_count}, Invalid: {invalid_count} | "
+                f"Epsilon: {next_epsilon}"
             )
+
     plotter.fig.savefig(
-        str(PLOTS_DIR / f"training_{'run.id'}.png"), dpi=300, bbox_inches="tight"
+        str(PLOTS_DIR / "training_self_play.png"), dpi=300, bbox_inches="tight"
     )
-    """run.log({"training_plot": wandb.Image(str(PLOTS_DIR / f"training_{run.id}.png"))})"""
+    """run.log({"training_plot": wandb.Image(str(PLOTS_DIR / "training_self_play.png"))})"""
 
 
-# Test code
+def _append_metrics_row(csv_path, row):
+    fieldnames = list(row.keys())
+    write_header = not csv_path.exists()
+
+    # e.g. after 10,000 games you can load this CSV in pandas or Excel and inspect trends.
+    with csv_path.open("a", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def _write_metrics_summary(
+    metrics_json_path, stats, latest_game, record_score, latest_winner
+):
+    # Lightweight summary for quick checks without parsing the full per-game CSV.
+    summary = {
+        "latest_game": latest_game,
+        "record_score": record_score,
+        "latest_winner": latest_winner,
+        "total_p1_wins": int(sum(stats["p1_wins"])),
+        "total_p2_wins": int(sum(stats["p2_wins"])),
+        "timeouts": int(sum(stats["timeouts"])),
+        "avg_steps": float(np.mean(stats["steps"])) if stats["steps"] else 0.0,
+        "avg_shared_score": (
+            float(np.mean(stats["shared_scores"])) if stats["shared_scores"] else 0.0
+        ),
+        "avg_invalid_moves": (
+            float(np.mean(stats["invalid_moves"])) if stats["invalid_moves"] else 0.0
+        ),
+    }
+
+    with metrics_json_path.open("w", encoding="utf-8") as metrics_file:
+        json.dump(summary, metrics_file, indent=2)
+
 
 if __name__ == "__main__":
-    # Inizializza Weights & Biases run per il monitoraggio del training
     """run = wandb.init(
         project="quoridor-rl",
-        name="training_v0",
+        name="training_self_play_v0",
         config={
             "architecture": "Linear_QNet",
             "epoches": NUM_GAMES,
@@ -284,18 +351,15 @@ if __name__ == "__main__":
             "epsilon_min": 5,
             "batch_size": BATCH_SIZE,
             "max_memory": MAX_MEMORY,
-            "reward_structure": "win=+20, lose=-20, correct_direction=+0.1, wrong_direction=-0.1, timeout=-5",
+            "training_mode": "shared-model self-play",
         },
     )"""
 
-    # Training: due agenti separati si affrontano
-    print("\n=== Starting P1 vs P2 Agent Training ===")
-    agent1 = Agent(P1)
-    agent2 = Agent(P2)
+    print("\n=== Starting Shared-Model Self-Play Training ===")
+    agent = SelfPlayAgent()
     env = GridGameAi()
     ui = TrainingUI(env, show_every=2, speed=30)
 
     plotter = LivePlotter()
-    train_agents(env, agent1, agent2, plotter, ui, num_games=NUM_GAMES)
-    # Al termine del training, chiudi il run di Weights & Biases
+    train_self_play(env, agent, plotter, ui, num_games=NUM_GAMES)
     """run.finish()"""
