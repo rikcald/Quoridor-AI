@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 
 """
-Dedicated entrypoint for the AlphaZero-style training pipeline.
+Simple entrypoint for the AlphaZero-style training pipeline.
 
-Why this file exists:
-- it keeps the AlphaZero workflow separate from the older DQN/Q-learning code
-- it gives one simple command to launch training
-- it collects the main hyperparameters in one easy-to-edit place
+This file is intentionally written in a very direct style:
+- hyperparameters are grouped in one visible block
+- the whole pipeline is assembled inside main()
+- there are no config classes or build helpers to chase around
 
 Run from the project root with:
     venv\\Scripts\\python.exe train_alphazero.py
 """
 
-from dataclasses import dataclass
 from pathlib import Path
 import sys
 
@@ -23,181 +22,116 @@ GAME_DIR = PROJECT_ROOT / "game"
 if str(GAME_DIR) not in sys.path:
     sys.path.insert(0, str(GAME_DIR))
 
+import agent as agent_module
 from agent import AlphaZeroSelfPlayAgent, train_alphazero_self_play
 from game_logic_Ai import GridGameAi
 from helper import LivePlotter
 from pygame_training_ui import TrainingUI
 
 
-@dataclass
-class AlphaZeroTrainingConfig:
-    """
-    Small configuration object for AlphaZero training.
+def main():
+    # ============================================================
+    # 1. TRAINING SETTINGS
+    # ============================================================
 
-    The goal is readability first:
-    you can open this file and immediately see the training settings in one place.
-    """
+    num_games = 5
+    max_steps_per_game = 400
 
-    # --- Self-play length ---
-    num_games: int = 50
-    max_steps_per_game: int = 400
+    learning_rate = 0.001
 
-    # --- Network / optimizer ---
-    learning_rate: float = 0.001
+    num_simulations = 10
+    c_puct = 1.5
+    root_dirichlet_alpha = 0.3
+    root_dirichlet_epsilon = 0.25
 
-    # --- MCTS ---
-    num_simulations: int = 25
-    c_puct: float = 1.5
-    root_dirichlet_alpha: float = 0.3
-    root_dirichlet_epsilon: float = 0.25
+    # Temperature controls exploration when sampling from MCTS visit counts.
+    # e.g. 1.0 = more exploration, 0.0 = always pick the most visited move.
+    temperature = 1.0
+    temperature_drop_step = 10
 
-    # --- Move selection ---
-    # temperature controls exploration when sampling from MCTS visit counts:
-    # e.g. 1.0 = more exploration, 0.0 = always choose the most visited action.
-    temperature: float = 1.0
-    temperature_drop_step: int = 10
+    use_training_ui = True
+    ui_show_every = 1
+    ui_speed = 30
 
-    # --- UI / plotting ---
-    use_training_ui: bool = False
-    ui_show_every: int = 5
-    ui_speed: int = 30
-    use_live_plotter: bool = True
+    use_live_plotter = True
 
-
-def build_environment(config: AlphaZeroTrainingConfig) -> GridGameAi:
-    """
-    Create the Quoridor environment and apply script-level settings.
-
-    For now the environment already owns its reward parameters internally.
-    We still set `max_steps_per_game` at the training-script level because
-    it belongs more to the training loop than to the game rules themselves.
-    """
-    env = GridGameAi()
-    return env
-
-
-def build_agent(config: AlphaZeroTrainingConfig) -> AlphaZeroSelfPlayAgent:
-    """
-    Create the AlphaZero-style agent.
-
-    This agent owns:
-    - the policy-value network
-    - the AlphaZero trainer
-    - the self-play example buffer
-    """
-    return AlphaZeroSelfPlayAgent(
-        lr=config.learning_rate,
-        temperature=config.temperature,
-    )
-
-
-def build_ui_if_enabled(env: GridGameAi, config: AlphaZeroTrainingConfig):
-    """
-    Build the pygame UI only if explicitly enabled.
-
-    This is useful because MCTS self-play can already be slow, so many runs are
-    easier to do headless first.
-    """
-    if not config.use_training_ui:
-        return None
-
-    return TrainingUI(
-        env=env,
-        show_every=config.ui_show_every,
-        speed=config.ui_speed,
-    )
-
-
-def build_plotter_if_enabled(config: AlphaZeroTrainingConfig):
-    """
-    Build the live matplotlib plotter only if enabled.
-    """
-    if not config.use_live_plotter:
-        return None
-
-    return LivePlotter()
-
-
-def print_training_summary(config: AlphaZeroTrainingConfig):
-    """
-    Print a small readable summary before the run starts.
-    """
+    # ============================================================
+    # 2. PRINT THE CONFIGURATION
+    # ============================================================
     print("\n=== AlphaZero Training Configuration ===")
-    print(f"Games: {config.num_games}")
-    print(f"Max steps per game: {config.max_steps_per_game}")
-    print(f"Learning rate: {config.learning_rate}")
-    print(f"MCTS simulations per move: {config.num_simulations}")
-    print(f"c_puct: {config.c_puct}")
-    print(f"Dirichlet alpha: {config.root_dirichlet_alpha}")
-    print(f"Dirichlet epsilon: {config.root_dirichlet_epsilon}")
-    print(f"Temperature: {config.temperature}")
-    print(f"Temperature drop step: {config.temperature_drop_step}")
-    print(f"Use training UI: {config.use_training_ui}")
-    print(f"Use live plotter: {config.use_live_plotter}")
+    print(f"Games: {num_games}")
+    print(f"Max steps per game: {max_steps_per_game}")
+    print(f"Learning rate: {learning_rate}")
+    print(f"MCTS simulations per move: {num_simulations}")
+    print(f"c_puct: {c_puct}")
+    print(f"Dirichlet alpha: {root_dirichlet_alpha}")
+    print(f"Dirichlet epsilon: {root_dirichlet_epsilon}")
+    print(f"Temperature: {temperature}")
+    print(f"Temperature drop step: {temperature_drop_step}")
+    print(f"Use training UI: {use_training_ui}")
+    print(f"UI show every: {ui_show_every}")
+    print(f"UI speed: {ui_speed}")
+    print(f"Use live plotter: {use_live_plotter}")
     print("========================================\n")
 
+    # ============================================================
+    # 3. CREATE THE MAIN OBJECTS
+    # ============================================================
+    # Environment:
+    # owns the board state, legal moves, winner detection, canonical state, etc.
+    env = GridGameAi()
 
-def run_training(config: AlphaZeroTrainingConfig):
-    """
-    Create all main objects and launch the AlphaZero training loop.
+    # Agent:
+    # owns the policy-value network, AlphaZero trainer, and replay/examples buffer.
+    agent = AlphaZeroSelfPlayAgent(
+        lr=learning_rate,
+        temperature=temperature,
+    )
 
-    This function is intentionally small:
-    the idea is that the script reads almost like a checklist.
-    """
-    env = build_environment(config)
-    agent = build_agent(config)
-    ui = build_ui_if_enabled(env, config)
-    plotter = build_plotter_if_enabled(config)
+    # Optional pygame visualization.
+    if use_training_ui:
+        ui = TrainingUI(
+            env=env,
+            show_every=ui_show_every,
+            speed=ui_speed,
+        )
+    else:
+        ui = None
 
-    # The current training loop reads MAX_STEPS_PER_GAME from the game.agent module.
-    # We override it here so this script stays the main source of truth.
-    import agent as agent_module
+    # Optional live matplotlib plotter.
+    if use_live_plotter:
+        plotter = LivePlotter()
+    else:
+        plotter = None
 
-    agent_module.MAX_STEPS_PER_GAME = config.max_steps_per_game
+    # ============================================================
+    # 4. OVERRIDE TRAINING-LOOP GLOBAL SETTINGS
+    # ============================================================
+    # The current training loop reads MAX_STEPS_PER_GAME from game/agent.py.
+    # We set it here so this script is the obvious place to control it.
+    agent_module.MAX_STEPS_PER_GAME = max_steps_per_game
 
+    # ============================================================
+    # 5. START TRAINING
+    # ============================================================
+    # The loop below will:
+    # - run MCTS at each move
+    # - turn root visit counts into a target policy pi
+    # - store (state, pi, z) examples
+    # - train the policy-value network from those examples
     train_alphazero_self_play(
         env=env,
         agent=agent,
         plotter=plotter,
         ui=ui,
-        num_games=config.num_games,
-        num_simulations=config.num_simulations,
-        c_puct=config.c_puct,
-        root_dirichlet_alpha=config.root_dirichlet_alpha,
-        root_dirichlet_epsilon=config.root_dirichlet_epsilon,
-        temperature=config.temperature,
-        temperature_drop_step=config.temperature_drop_step,
+        num_games=num_games,
+        num_simulations=num_simulations,
+        c_puct=c_puct,
+        root_dirichlet_alpha=root_dirichlet_alpha,
+        root_dirichlet_epsilon=root_dirichlet_epsilon,
+        temperature=temperature,
+        temperature_drop_step=temperature_drop_step,
     )
-
-
-def main():
-    """
-    Main entrypoint for manual runs.
-
-    If you want to experiment, the easiest workflow is:
-    1. edit the config values below
-    2. run this script again
-    """
-    config = AlphaZeroTrainingConfig(
-        # Start with small values while debugging.
-        # Later you can increase `num_games` and `num_simulations`.
-        num_games=5,
-        max_steps_per_game=400,
-        learning_rate=0.001,
-        num_simulations=10,
-        c_puct=1.5,
-        root_dirichlet_alpha=0.3,
-        root_dirichlet_epsilon=0.25,
-        temperature=1.0,
-        temperature_drop_step=10,
-        use_training_ui=False,
-        ui_show_every=5,
-        ui_speed=30,
-        use_live_plotter=True,
-    )
-
-    print_training_summary(config)
-    run_training(config)
 
 
 if __name__ == "__main__":
