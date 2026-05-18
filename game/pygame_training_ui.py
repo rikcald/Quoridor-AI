@@ -60,7 +60,10 @@ class TrainingUI:
     def new_game(self):
         """Chiamare questo all'inizio di ogni partita nel training."""
         self.game_count += 1
-        self.show_current = (self.game_count % self.show_every) == 0
+        # Show the first game immediately, then every N games after that.
+        # e.g. with show_every=5 we show games 1, 6, 11, ... instead of waiting
+        # until game 5 while the window stays black at startup.
+        self.show_current = ((self.game_count - 1) % self.show_every) == 0
         self.step_count = 0
         self.winner = None
         self.last_action = None
