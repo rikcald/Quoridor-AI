@@ -278,14 +278,3 @@ class TrainingUI:
     def close(self):
         """Chiudi la finestra pygame."""
         pygame.quit()
-
-
-if __name__ == "__main__":
-    modello = torch.load("./model/Linear_QNet_model_P1.pth")
-    print(type(modello))
-
-    if isinstance(modello, dict):
-        print(modello.keys())
-
-    for k, v in modello.items():
-        print(k, v.shape)

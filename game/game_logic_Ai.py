@@ -1,5 +1,6 @@
 import numpy as np
 from collections import deque
+from copy import deepcopy
 
 P1 = 1
 P2 = 2
@@ -78,6 +79,111 @@ class GridGameAi:
 
         self.p1_reward_history.clear()
         self.p2_reward_history.clear()
+
+    def clone(self):
+        """
+        Return a deep copy of the whole game state.
+
+        This is useful for MCTS because simulations must explore hypothetical
+        actions without mutating the real self-play environment.
+        """
+        return deepcopy(self)
+
+    def get_current_player(self):
+        return self.turn
+
+    def get_canonical_state(self, player=None):
+        """
+        Alias kept explicit for AlphaZero-style code.
+
+        e.g. if player is P2, the returned tensor is vertically flipped so that
+        plane 0 still means "me at the bottom" and plane 1 means "opponent at the top".
+        """
+        if player is None:
+            player = self.turn
+        return self.get_state_player_centric(player)
+
+    def get_valid_actions(self, player=None):
+        """
+        Return valid action indices in canonical action space.
+
+        e.g. both P1 and P2 receive indices in the same 0..143 shared action space,
+        even though some of those actions decode differently on the real board.
+        """
+        if player is None:
+            player = self.turn
+
+        mask = self.get_action_mask(player)
+        return np.where(mask == 1)[0]
+
+    def is_terminal(self):
+        return self.check_winner() is not None
+
+    def get_winner(self):
+        return self.check_winner()
+
+    def get_outcome_for_player(self, player):
+        """
+        Return the final AlphaZero target z from one player's perspective.
+
+        Output:
+        - +1 if `player` has won
+        - -1 if `player` has lost
+        - 0 if the game is not finished yet
+        """
+        winner = self.check_winner()
+        if winner is None:
+            return 0
+        return 1 if winner == player else -1
+
+    def apply_action(self, action):
+        """
+        Mutate the current state by playing one canonical action index.
+
+        This is just a small explicit wrapper around step() because the future MCTS
+        code will naturally talk in terms of "apply action and advance state".
+        """
+        return self.step(action)
+
+    def next_state(self, action):
+        """
+        Return a cloned state after playing one action.
+
+        e.g. MCTS can call `child = state.next_state(action)` many times without
+        touching the root position used by the real game loop.
+        """
+        cloned_state = self.clone()
+        cloned_state.apply_action(action)
+        return cloned_state
+
+    def to_dict(self):
+        """
+        Serialize the logical board state into plain Python containers.
+
+        This helper makes debugging and future checkpointing easier than reading the
+        full mutable object with numpy arrays and sets directly.
+        """
+        return {
+            "grid_size": self.grid_size,
+            "turn": self.turn,
+            "p1_pos": tuple(self.p1_pos.tolist()),
+            "p2_pos": tuple(self.p2_pos.tolist()),
+            "p1_horizontal_walls": sorted(self.p1_horizontal_walls),
+            "p1_vertical_walls": sorted(self.p1_vertical_walls),
+            "p2_horizontal_walls": sorted(self.p2_horizontal_walls),
+            "p2_vertical_walls": sorted(self.p2_vertical_walls),
+            "p1_available_walls": self.p1_available_walls,
+            "p2_available_walls": self.p2_available_walls,
+        }
+
+    def string_representation(self):
+        """
+        Hash-friendly string form of the position for future MCTS caches.
+
+        e.g. the search tree can use this string as a dictionary key for node stats.
+        """
+        state_dict = self.to_dict()
+        return str(state_dict)
 
     def _flip_wall_row_for_p2(self, row):
         # Wall coordinates live on an 8x8 wall grid for a 9x9 board, so P2's
@@ -174,12 +280,17 @@ class GridGameAi:
                 invalid = True
 
         if invalid:
-            return self.get_state(), self.invalid_action_penalty, False, {
-                "invalid": True,
-                "reward_components": {
-                    "invalid_action_penalty": self.invalid_action_penalty
+            return (
+                self.get_state(),
+                self.invalid_action_penalty,
+                False,
+                {
+                    "invalid": True,
+                    "reward_components": {
+                        "invalid_action_penalty": self.invalid_action_penalty
+                    },
                 },
-            }
+            )
 
         winner = self.check_winner()
         done = winner is not None
@@ -195,11 +306,16 @@ class GridGameAi:
 
         state = self.get_state()
 
-        return state, reward, done, {
-            "invalid": False,
-            "winner": winner,
-            "reward_components": reward_components,
-        }
+        return (
+            state,
+            reward,
+            done,
+            {
+                "invalid": False,
+                "winner": winner,
+                "reward_components": reward_components,
+            },
+        )
 
     def _compute_reward(
         self, player, decoded_action, done, winner, p1_old_pos, p2_old_pos
@@ -216,21 +332,21 @@ class GridGameAi:
             # e.g. P1 moving from row 8 -> 7 yields +0.1, P2 moving from row 0 -> 1 yields +0.1.
             if player == P1:
                 progress_reward = (
-                    (p1_old_pos[0] - self.p1_pos[0]) * self.progress_reward_scale
-                )
+                    p1_old_pos[0] - self.p1_pos[0]
+                ) * self.progress_reward_scale
             else:
                 progress_reward = (
-                    (self.p2_pos[0] - p2_old_pos[0]) * self.progress_reward_scale
-                )
+                    self.p2_pos[0] - p2_old_pos[0]
+                ) * self.progress_reward_scale
             reward = progress_reward
             reward_components["progress_reward"] = progress_reward
         else:
             reward = self.wall_placement_penalty
-            reward_components["wall_placement_penalty"] = (
-                self.wall_placement_penalty
-            )
+            reward_components["wall_placement_penalty"] = self.wall_placement_penalty
 
-        reward_history = self.p1_reward_history if player == P1 else self.p2_reward_history
+        reward_history = (
+            self.p1_reward_history if player == P1 else self.p2_reward_history
+        )
         reward_history.append(reward)
 
         # Penalize local stagnation when the last 5 shaped rewards sum to 0:
