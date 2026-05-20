@@ -5,5 +5,7 @@ __pycache__/
 /model2/
 /wandb/
 /plots/
+/plots_old/
+/arena_alphazero.py
 /test/
 /training_metrics/
