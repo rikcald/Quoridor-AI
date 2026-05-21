@@ -25,6 +25,7 @@ class MCTSNode:
         # e.g. using {} here inside __init__ avoids the shared-mutable-default bug.
         self.children = {}
 
+    # TODO forse conviene cambiarlo in is_fully_expanded o qualcosa del genere, perche' in teoria un nodo potrebbe essere espanso solo parzialmente, e quindi non sarebbe detto che se ha dei figli allora e' completamente espanso.
     def is_expanded(self):
         return len(self.children) > 0
 
@@ -42,15 +43,13 @@ class MCTSNode:
         """
         return -self.mean_value()
 
-    def expand(self, policy_probs):
+    def expand(self, policy_probs, valid_actions):
         """
         Create one child per legal action using the policy prior.
 
         `policy_probs` is expected to already be masked and normalized over
         legal actions only.
         """
-        valid_actions = self.state.get_valid_actions()
-
         for action in valid_actions:
             child_state = self.state.next_state(int(action))
             self.children[int(action)] = MCTSNode(
@@ -60,22 +59,30 @@ class MCTSNode:
                 prior=float(policy_probs[int(action)]),
             )
 
+    def get_ucb_score(self, child, c_puct):
+        """
+        Compute the AlphaZero/PUCT score used to select a child:
+
+        U(s,a) = Q(s, a) + c_puct * P(s, a) * sqrt(N(s)) / (1 + N(s, a))
+        """
+        q_score = child.q_value_for_parent()
+        exploration_score = (
+            c_puct
+            * child.prior
+            * math.sqrt(max(1, self.visit_count))
+            / (1 + child.visit_count)
+        )
+        return q_score + exploration_score
+
     def select_child(self, c_puct):
         """
-        Pick the child maximizing the PUCT score:
-        Q(s, a) + U(s, a)
+        Pick the child with the highest AlphaZero/PUCT score.
         """
-        best_score = float("-inf")
         best_child = None
-
-        sqrt_parent_visits = math.sqrt(max(1, self.visit_count))
+        best_score = float("-inf")
 
         for child in self.children.values():
-            q_score = child.q_value_for_parent()
-            u_score = (
-                c_puct * child.prior * sqrt_parent_visits / (1 + child.visit_count)
-            )
-            score = q_score + u_score
+            score = self.get_ucb_score(child, c_puct)
 
             if score > best_score:
                 best_score = score
@@ -132,15 +139,15 @@ class MCTS:
                 current_player = node.state.get_current_player()
                 leaf_value = float(node.state.get_outcome_for_player(current_player))
             else:
-                policy_probs, leaf_value = self._evaluate(node.state)
+                policy_probs, leaf_value, valid_actions = self._evaluate(node.state)
 
                 # Add Dirichlet noise only once, at the root expansion.
                 if simulation_idx == 0 and node is root and self.add_dirichlet_noise:
                     policy_probs = self._add_dirichlet_noise(
-                        policy_probs, node.state.get_valid_actions()
+                        policy_probs, valid_actions
                     )
 
-                node.expand(policy_probs)
+                node.expand(policy_probs, valid_actions)
 
             self._backpropagate(search_path, leaf_value)
 
@@ -205,7 +212,7 @@ class MCTS:
 
         valid_actions = state.get_valid_actions()
         masked_policy = self.agent.mask_and_normalize_policy(raw_policy, valid_actions)
-        return masked_policy, float(value)
+        return masked_policy, float(value), valid_actions
 
     def _add_dirichlet_noise(self, policy_probs, valid_actions):
         """
@@ -238,3 +245,9 @@ class MCTS:
             node.visit_count += 1
             node.value_sum += value
             value = -value
+
+
+# TODO capire questo concetto: se in tic-tac toe quando facciamo l'expansion ogni volta alla fine ci ritroveremo dopo 8 iterazioni ad aver visitato 8/8 possibilità nonostante non sia abbastanza per decretare quale mossa verrà scelta,
+# TODO però sicuramente ci darà già qualcosa e poi sicuramente esploreremo anche quelle foglie, mentre in quorridor le possibili azioni sono molte di piu, le legal action da una posizione di semi-partenza facciamo
+# TODO saranno numero_di_movement_legali+numero di posizioni di muro piazzabile legali e quindi ci aggireremo sul centinaio (almeno all'inizio), questo significa che se mi metto ad espandere questi primi nodi, già un centinaio di iterazioni sono andate,
+# TODO quindi probabilmente poi mi toccherà alzare di molto il numero di iterazioni da fare.
