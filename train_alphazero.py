@@ -22,8 +22,9 @@ GAME_DIR = PROJECT_ROOT / "game"
 if str(GAME_DIR) not in sys.path:
     sys.path.insert(0, str(GAME_DIR))
 
-import agent as agent_module
-from agent import AlphaZeroSelfPlayAgent, train_alphazero_self_play
+import alphazero_training as training_module
+from agent import AlphaZeroSelfPlayAgent
+from alphazero_training import train_alphazero_self_play
 from game_logic_Ai import GridGameAi
 from helper import LivePlotter
 from pygame_training_ui import TrainingUI
@@ -34,12 +35,12 @@ def main():
     # 1. TRAINING SETTINGS
     # ============================================================
 
-    num_games = 5
+    num_games = 50
     max_steps_per_game = 400
 
     learning_rate = 0.001
 
-    num_simulations = 10
+    num_simulations = 50
     c_puct = 1.5
     root_dirichlet_alpha = 0.3
     root_dirichlet_epsilon = 0.25
@@ -49,7 +50,7 @@ def main():
     temperature = 1.0
     temperature_drop_step = 10
 
-    use_training_ui = True
+    use_training_ui = False
     ui_show_every = 1
     ui_speed = 30
 
@@ -107,9 +108,9 @@ def main():
     # ============================================================
     # 4. OVERRIDE TRAINING-LOOP GLOBAL SETTINGS
     # ============================================================
-    # The current training loop reads MAX_STEPS_PER_GAME from game/agent.py.
+    # The current training loop reads MAX_STEPS_PER_GAME from game/alphazero_training.py.
     # We set it here so this script is the obvious place to control it.
-    agent_module.MAX_STEPS_PER_GAME = max_steps_per_game
+    training_module.MAX_STEPS_PER_GAME = max_steps_per_game
 
     # ============================================================
     # 5. START TRAINING

@@ -36,7 +36,8 @@ class MCTSNode:
 
     def q_value_for_parent(self):
         """
-        Convert this node's mean value into the parent's perspective.
+        Convert this node's mean value into the parent's perspective. since the parent is the opponent, we need to flip the sign.
+
 
         e.g. if this child node looks great for the opponent (+0.8 from their view),
         then it should look bad for the parent (-0.8).
@@ -65,14 +66,14 @@ class MCTSNode:
 
         U(s,a) = Q(s, a) + c_puct * P(s, a) * sqrt(N(s)) / (1 + N(s, a))
         """
-        q_score = child.q_value_for_parent()
+        q_value = child.q_value_for_parent()
         exploration_score = (
             c_puct
             * child.prior
             * math.sqrt(max(1, self.visit_count))
             / (1 + child.visit_count)
         )
-        return q_score + exploration_score
+        return q_value + exploration_score
 
     def select_child(self, c_puct):
         """
@@ -107,6 +108,7 @@ class MCTS:
         self,
         agent,
         num_simulations=50,
+        # c_puct value controls how much exploration the search does, higher values mean more exploration
         c_puct=1.5,
         dirichlet_alpha=0.3,
         dirichlet_epsilon=0.25,
@@ -129,7 +131,7 @@ class MCTS:
             node = root
             search_path = [node]
 
-            # Selection: follow the tree until we hit an unexpanded node or a terminal node.
+            # ------------ Selection ------------
             while node.is_expanded() and not node.state.is_terminal():
                 node = node.select_child(self.c_puct)
                 search_path.append(node)
@@ -138,6 +140,8 @@ class MCTS:
                 # Terminal values are exact, not predicted by the network.
                 current_player = node.state.get_current_player()
                 leaf_value = float(node.state.get_outcome_for_player(current_player))
+
+            # ------------ Expansion ------------
             else:
                 policy_probs, leaf_value, valid_actions = self._evaluate(node.state)
 
