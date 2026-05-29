@@ -12,3 +12,5 @@ __pycache__/
 /.ipynb_checkpoints/
 /.jupyter_runtime/
 /jupyter_server.pid
+quoridor_alphazero_runs
+benchmark_inference.py
