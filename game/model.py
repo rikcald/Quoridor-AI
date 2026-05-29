@@ -117,6 +117,30 @@ class PolicyValueNet(nn.Module):
             policy = torch.softmax(policy_logits, dim=1)
             return policy.squeeze(0), value.squeeze(0).item()
 
+    def predict_batch(self, states):
+        """
+        Batched inference for multiple canonical states.
+
+        Returns:
+        - policy probabilities over the full action space, shape (batch, num_actions)
+        - scalar values, shape (batch,)
+        """
+        self.eval()
+        with torch.no_grad():
+            device = next(self.parameters()).device
+            states_tensor = torch.tensor(
+                states,
+                dtype=torch.float,
+                device=device,
+            )
+
+            if len(states_tensor.shape) == 3:
+                states_tensor = states_tensor.unsqueeze(0)
+
+            policy_logits, values = self(states_tensor)
+            policies = torch.softmax(policy_logits, dim=1)
+            return policies, values.squeeze(1)
+
     def save(self, file_name="PolicyValueNet_model.pth"):
         model_folder_path = _ensure_model_dir()
         file_name = os.path.join(model_folder_path, file_name)

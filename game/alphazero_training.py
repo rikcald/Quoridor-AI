@@ -32,6 +32,7 @@ def train_alphazero_self_play(
     root_dirichlet_epsilon=0.25,
     temperature=1.0,
     temperature_drop_step=10,
+    mcts_batch_size=1,
 ):
     """
     Full AlphaZero-style self-play loop.
@@ -96,7 +97,10 @@ def train_alphazero_self_play(
                 dirichlet_epsilon=root_dirichlet_epsilon,
                 add_dirichlet_noise=True,
             )
-            root = search.run(env)
+            if mcts_batch_size > 1:
+                root = search.run_batched(env, batch_size=mcts_batch_size)
+            else:
+                root = search.run(env)
 
             # Early in the game we keep more exploration, later we collapse
             # toward the most visited move.
@@ -198,6 +202,7 @@ def train_alphazero_self_play(
                 "total_loss": round(train_info["total_loss"], 6),
                 "root_temperature": root_temperature,
                 "num_simulations": num_simulations,
+                "mcts_batch_size": mcts_batch_size,
             },
         )
 

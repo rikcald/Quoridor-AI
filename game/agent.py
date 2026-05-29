@@ -63,6 +63,9 @@ class AlphaZeroSelfPlayAgent:
     def predict(self, state):
         return self.model.predict(state)
 
+    def predict_batch(self, states):
+        return self.model.predict_batch(states)
+
     def mask_and_normalize_policy(self, policy, valid_actions):
         """
         Zero-out illegal actions and renormalize over the legal ones.

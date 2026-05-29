@@ -42,6 +42,7 @@ def main():
     learning_rate = 0.001
 
     num_simulations = 50
+    mcts_batch_size = 1
     c_puct = 1.5
     root_dirichlet_alpha = 0.3
     root_dirichlet_epsilon = 0.25
@@ -65,6 +66,7 @@ def main():
     print(f"Max steps per game: {max_steps_per_game}")
     print(f"Learning rate: {learning_rate}")
     print(f"MCTS simulations per move: {num_simulations}")
+    print(f"MCTS inference batch size: {mcts_batch_size}")
     print(f"c_puct: {c_puct}")
     print(f"Dirichlet alpha: {root_dirichlet_alpha}")
     print(f"Dirichlet epsilon: {root_dirichlet_epsilon}")
@@ -129,6 +131,7 @@ def main():
         ui=ui,
         num_games=num_games,
         num_simulations=num_simulations,
+        mcts_batch_size=mcts_batch_size,
         c_puct=c_puct,
         root_dirichlet_alpha=root_dirichlet_alpha,
         root_dirichlet_epsilon=root_dirichlet_epsilon,
