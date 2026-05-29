@@ -27,6 +27,7 @@ from agent import AlphaZeroSelfPlayAgent
 from alphazero_training import train_alphazero_self_play
 from game_logic_Ai import GridGameAi
 from helper import LivePlotter
+from model import DEVICE
 from pygame_training_ui import TrainingUI
 
 
@@ -73,6 +74,7 @@ def main():
     print(f"UI show every: {ui_show_every}")
     print(f"UI speed: {ui_speed}")
     print(f"Use live plotter: {use_live_plotter}")
+    print(f"PyTorch device: {DEVICE}")
     print("========================================\n")
 
     # ============================================================

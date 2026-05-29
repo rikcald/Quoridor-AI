@@ -5,6 +5,9 @@ import torch.nn as nn
 import torch.optim as optim
 
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def _ensure_model_dir():
     model_folder_path = "./model"
     if not os.path.exists(model_folder_path):
@@ -104,7 +107,12 @@ class PolicyValueNet(nn.Module):
         """
         self.eval()
         with torch.no_grad():
-            state_tensor = torch.tensor(state, dtype=torch.float).unsqueeze(0)
+            device = next(self.parameters()).device
+            state_tensor = torch.tensor(
+                state,
+                dtype=torch.float,
+                device=device,
+            ).unsqueeze(0)
             policy_logits, value = self(state_tensor)
             policy = torch.softmax(policy_logits, dim=1)
             return policy.squeeze(0), value.squeeze(0).item()
@@ -125,9 +133,10 @@ class AlphaZeroTrainer:
     """
 
     def __init__(self, model, lr, weight_decay=1e-4, value_loss_weight=1.0):
-        self.model = model
+        self.device = DEVICE
+        self.model = model.to(self.device)
         self.optimizer = optim.Adam(
-            model.parameters(),
+            self.model.parameters(),
             lr=lr,
             weight_decay=weight_decay,
         )
@@ -135,9 +144,17 @@ class AlphaZeroTrainer:
         self.value_criterion = nn.MSELoss()
 
     def _prepare_batch(self, states, target_policies, target_values):
-        states = torch.tensor(states, dtype=torch.float)
-        target_policies = torch.tensor(target_policies, dtype=torch.float)
-        target_values = torch.tensor(target_values, dtype=torch.float)
+        states = torch.tensor(states, dtype=torch.float, device=self.device)
+        target_policies = torch.tensor(
+            target_policies,
+            dtype=torch.float,
+            device=self.device,
+        )
+        target_values = torch.tensor(
+            target_values,
+            dtype=torch.float,
+            device=self.device,
+        )
 
         # e.g. one example:
         # state         (6, 9, 9)  -> (1, 6, 9, 9)
@@ -164,6 +181,7 @@ class AlphaZeroTrainer:
         return -(target_policy * log_probs).sum(dim=1).mean()
 
     def train_step(self, states, target_policies, target_values):
+        self.model.train()
         states, target_policies, target_values = self._prepare_batch(
             states, target_policies, target_values
         )
