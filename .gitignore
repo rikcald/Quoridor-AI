@@ -14,3 +14,4 @@ __pycache__/
 /jupyter_server.pid
 quoridor_alphazero_runs
 benchmark_inference.py
+didactic_alphazero_trace.py
