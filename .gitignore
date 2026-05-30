@@ -5,4 +5,14 @@ __pycache__/
 /model2/
 /wandb/
 /plots/
+/plots_old/
+/arena_alphazero.py
 /test/
+/training_metrics/
+/.ipynb_checkpoints/
+/.jupyter_runtime/
+/jupyter_server.pid
+quoridor_alphazero_runs
+benchmark_inference.py
+didactic_alphazero_trace.py
+profile_mcts.py
