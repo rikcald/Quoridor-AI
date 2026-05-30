@@ -1,5 +1,4 @@
 from collections import deque
-from copy import deepcopy
 
 import numpy as np
 
@@ -27,6 +26,13 @@ MOVE_ACTIONS = [
 NUM_MOVE_ACTIONS = len(MOVE_ACTIONS)
 NUM_WALL_POS = (9 - 1) ** 2
 TOTAL_ACTIONS = NUM_MOVE_ACTIONS + 2 * NUM_WALL_POS
+BASE_DIRECTIONS = {
+    "up": (-1, 0),
+    "down": (1, 0),
+    "left": (0, -1),
+    "right": (0, 1),
+}
+PATH_DIRECTIONS = tuple(BASE_DIRECTIONS.values())
 
 
 def flip_direction_for_p2(direction):
@@ -83,9 +89,31 @@ class GridGameAi:
         self.p1_available_walls = 10
         self.p2_available_walls = 10
         self.turn = P1
+        self._valid_actions_cache = {}
 
     def clone(self):
-        return deepcopy(self)
+        cloned = self.__class__.__new__(self.__class__)
+        cloned.grid_size = self.grid_size
+        cloned.grid = self.grid.copy()
+        cloned.p1_pos = self.p1_pos.copy()
+        cloned.p2_pos = self.p2_pos.copy()
+        cloned.p1_horizontal_walls = set(self.p1_horizontal_walls)
+        cloned.p1_vertical_walls = set(self.p1_vertical_walls)
+        cloned.p2_horizontal_walls = set(self.p2_horizontal_walls)
+        cloned.p2_vertical_walls = set(self.p2_vertical_walls)
+        cloned.p1_available_walls = self.p1_available_walls
+        cloned.p2_available_walls = self.p2_available_walls
+        cloned.turn = self.turn
+        cloned._valid_actions_cache = {
+            player: actions.copy()
+            for player, actions in self._valid_actions_cache.items()
+        }
+        return cloned
+
+    def _invalidate_action_cache(self):
+        # Legal actions depend on pawn positions, walls, wall counts, and turn.
+        # Any real state mutation clears cached actions for both players.
+        self._valid_actions_cache.clear()
 
     def get_current_player(self):
         return self.turn
@@ -208,31 +236,35 @@ class GridGameAi:
 
     def get_action_mask(self, player):
         mask = np.zeros(TOTAL_ACTIONS, dtype=np.float32)
-
-        for move in self.available_moves(player):
-            action_id = self.encode_action(*move, player=player)
-            mask[action_id] = 1.0
-
-        for row in range(self.grid_size - 1):
-            for col in range(self.grid_size - 1):
-                if self._is_valid_wall(player, (row, col), "h"):
-                    action_id = self.encode_action(
-                        "wall", (row, col), "h", player=player
-                    )
-                    mask[action_id] = 1.0
-                if self._is_valid_wall(player, (row, col), "v"):
-                    action_id = self.encode_action(
-                        "wall", (row, col), "v", player=player
-                    )
-                    mask[action_id] = 1.0
-
+        mask[self.get_valid_actions(player)] = 1.0
         return mask
 
     def get_valid_actions(self, player=None):
         if player is None:
             player = self.turn
-        mask = self.get_action_mask(player)
-        return np.where(mask == 1)[0]
+
+        cached_actions = self._valid_actions_cache.get(player)
+        if cached_actions is not None:
+            return cached_actions.copy()
+
+        actions = []
+        for move in self.available_moves(player):
+            actions.append(self.encode_action(*move, player=player))
+
+        for row in range(self.grid_size - 1):
+            for col in range(self.grid_size - 1):
+                if self._is_valid_wall(player, (row, col), "h"):
+                    actions.append(
+                        self.encode_action("wall", (row, col), "h", player=player)
+                    )
+                if self._is_valid_wall(player, (row, col), "v"):
+                    actions.append(
+                        self.encode_action("wall", (row, col), "v", player=player)
+                    )
+
+        valid_actions = np.array(actions, dtype=np.int64)
+        self._valid_actions_cache[player] = valid_actions
+        return valid_actions.copy()
 
     def is_terminal(self):
         return self.check_winner() is not None
@@ -282,6 +314,20 @@ class GridGameAi:
         cloned_state.apply_action(action)
         return cloned_state
 
+    def next_state_from_valid_action(self, action):
+        cloned_state = self.clone()
+        cloned_state._apply_valid_action_without_rechecking(action)
+        return cloned_state
+
+    def _apply_valid_action_without_rechecking(self, action):
+        action_type, *decoded_args = self.decode_action(action, player=self.turn)
+
+        if action_type == "move":
+            self._move_without_rechecking(self.turn, decoded_args[0])
+        else:
+            location, orientation = decoded_args
+            self._place_wall_without_rechecking(self.turn, location, orientation)
+
     def to_dict(self):
         return {
             "grid_size": self.grid_size,
@@ -311,22 +357,33 @@ class GridGameAi:
         current = self.p1_pos.copy() if player == P1 else self.p2_pos.copy()
         parts = direction.split("-")
 
-        base_dirs = {
-            "up": (-1, 0),
-            "down": (1, 0),
-            "left": (0, -1),
-            "right": (0, 1),
-        }
-
-        drow, dcol = base_dirs[parts[0]]
+        drow, dcol = BASE_DIRECTIONS[parts[0]]
         new_pos = current + np.array([drow, dcol])
 
         if len(parts) == 2 and parts[1] == "jump":
             new_pos = new_pos + np.array([drow, dcol])
         elif len(parts) == 2:
-            sdrow, sdcol = base_dirs[parts[1]]
+            sdrow, sdcol = BASE_DIRECTIONS[parts[1]]
             new_pos = new_pos + np.array([sdrow, sdcol])
 
+        self._set_player_position(player, current, new_pos)
+        return direction
+
+    def _move_without_rechecking(self, player, direction):
+        current = self.p1_pos.copy() if player == P1 else self.p2_pos.copy()
+        parts = direction.split("-")
+        drow, dcol = BASE_DIRECTIONS[parts[0]]
+        new_pos = current + np.array([drow, dcol])
+
+        if len(parts) == 2 and parts[1] == "jump":
+            new_pos = new_pos + np.array([drow, dcol])
+        elif len(parts) == 2:
+            sdrow, sdcol = BASE_DIRECTIONS[parts[1]]
+            new_pos = new_pos + np.array([sdrow, sdcol])
+
+        self._set_player_position(player, current, new_pos)
+
+    def _set_player_position(self, player, current, new_pos):
         self.grid[current[0], current[1]] = 0
         self.grid[new_pos[0], new_pos[1]] = player
 
@@ -336,7 +393,7 @@ class GridGameAi:
             self.p2_pos = new_pos
 
         self.turn = P2 if self.turn == P1 else P1
-        return direction
+        self._invalidate_action_cache()
 
     def check_winner(self):
         if self.p1_pos[0] == 0:
@@ -383,14 +440,7 @@ class GridGameAi:
             opponent = self.p1_pos
 
         moves = []
-        directions = {
-            "up": (-1, 0),
-            "down": (1, 0),
-            "left": (0, -1),
-            "right": (0, 1),
-        }
-
-        for d, (drow, dcol) in directions.items():
+        for d, (drow, dcol) in BASE_DIRECTIONS.items():
             adj = current + np.array([drow, dcol])
             if not self.is_inside_grid(adj):
                 continue
@@ -429,8 +479,8 @@ class GridGameAi:
         return moves
 
     def is_inside_grid(self, pos):
-        pos_array = np.atleast_1d(pos)
-        return 0 <= pos_array[0] < self.grid_size and 0 <= pos_array[1] < self.grid_size
+        row, col = pos
+        return 0 <= row < self.grid_size and 0 <= col < self.grid_size
 
     def place_wall(self, player, location, orientation):
         if player != self.turn:
@@ -439,6 +489,12 @@ class GridGameAi:
         row, col = location
         if not self._is_valid_wall(player, location, orientation):
             return False, "Invalid placement!"
+
+        self._place_wall_without_rechecking(player, location, orientation)
+        return True, None
+
+    def _place_wall_without_rechecking(self, player, location, orientation):
+        row, col = location
 
         if orientation == "h":
             if player == P1:
@@ -457,7 +513,7 @@ class GridGameAi:
             self.p2_available_walls -= 1
 
         self.turn = P2 if self.turn == P1 else P1
-        return True, None
+        self._invalidate_action_cache()
 
     def _is_valid_wall(self, player, location, orientation):
         row, col = location
@@ -556,19 +612,20 @@ class GridGameAi:
         return False
 
     def _has_path(self, start, target_row):
-        visited = set()
-        queue = deque([tuple(start)])
-        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        start_pos = (int(start[0]), int(start[1]))
+        visited = {start_pos}
+        queue = deque([start_pos])
+        grid_size = self.grid_size
 
         while queue:
             row, col = queue.popleft()
             if row == target_row:
                 return True
 
-            for drow, dcol in directions:
+            for drow, dcol in PATH_DIRECTIONS:
                 nrow, ncol = row + drow, col + dcol
                 next_pos = (nrow, ncol)
-                if not self.is_inside_grid(next_pos):
+                if nrow < 0 or nrow >= grid_size or ncol < 0 or ncol >= grid_size:
                     continue
                 if next_pos in visited:
                     continue

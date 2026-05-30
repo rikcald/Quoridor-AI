@@ -53,7 +53,7 @@ class MCTSNode:
         legal actions only.
         """
         for action in valid_actions:
-            child_state = self.state.next_state(int(action))
+            child_state = self.state.next_state_from_valid_action(int(action))
             self.children[int(action)] = MCTSNode(
                 state=child_state,
                 parent=self,
