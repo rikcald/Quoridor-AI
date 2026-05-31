@@ -110,7 +110,7 @@ class AlphaZeroSelfPlayAgent:
             )
         )
 
-    def finalize_game_examples(self, winner):
+    def finalize_game_examples(self, winner, outcome_value=1.0):
         """
         Fill z for every stored position once the game ends.
         """
@@ -120,7 +120,12 @@ class AlphaZeroSelfPlayAgent:
             if winner is None:
                 example.target_value = 0.0
             else:
-                example.target_value = 1.0 if example.player == winner else -1.0
+                # Real terminal wins use the full +/-1 target. Timeout
+                # adjudications can pass a smaller value, because "closer to
+                # goal" is useful but less certain than an actual win.
+                example.target_value = (
+                    outcome_value if example.player == winner else -outcome_value
+                )
 
             finalized_examples.append(example)
             self.examples.append(example)

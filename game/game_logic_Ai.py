@@ -278,6 +278,66 @@ class GridGameAi:
             return 0
         return 1 if winner == player else -1
 
+    def shortest_path_distance_to_goal(self, player):
+        """
+        Return the fewest pawn moves needed for `player` to reach its goal row.
+
+        This is used only as a soft timeout adjudication signal: when self-play
+        hits the move limit, the player with the shorter legal path is treated
+        as slightly ahead instead of labeling the whole unfinished game a draw.
+        """
+        if player == P1:
+            start = self.p1_pos
+            target_row = 0
+        else:
+            start = self.p2_pos
+            target_row = self.grid_size - 1
+
+        start_pos = (int(start[0]), int(start[1]))
+        visited = {start_pos}
+        queue = deque([(start_pos, 0)])
+
+        while queue:
+            (row, col), distance = queue.popleft()
+            if row == target_row:
+                return distance
+
+            for drow, dcol in PATH_DIRECTIONS:
+                nrow, ncol = row + drow, col + dcol
+                next_pos = (nrow, ncol)
+                if (
+                    nrow < 0
+                    or nrow >= self.grid_size
+                    or ncol < 0
+                    or ncol >= self.grid_size
+                ):
+                    continue
+                if next_pos in visited:
+                    continue
+                if self.is_blocked((row, col), next_pos):
+                    continue
+
+                visited.add(next_pos)
+                queue.append((next_pos, distance + 1))
+
+        return float("inf")
+
+    def get_timeout_adjudication_winner(self):
+        """
+        Pick a soft winner for unfinished games by shortest legal path length.
+
+        Equal distances remain a real draw, because neither side has a clear
+        distance advantage at the truncation point.
+        """
+        p1_distance = self.shortest_path_distance_to_goal(P1)
+        p2_distance = self.shortest_path_distance_to_goal(P2)
+
+        if p1_distance < p2_distance:
+            return P1
+        if p2_distance < p1_distance:
+            return P2
+        return None
+
     def step(self, action):
         """
         Apply one canonical action index.
