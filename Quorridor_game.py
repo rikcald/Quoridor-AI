@@ -16,7 +16,16 @@ from game.mcts import MCTS
 
 pygame.init()
 
-game = GridGameAi()
+# Board variant:
+# - fast exam-friendly play/demo: BOARD_SIZE=5, MAX_WALLS=4
+# - classic Quoridor: BOARD_SIZE=9, MAX_WALLS=10
+BOARD_SIZE = 5
+MAX_WALLS = 4
+
+# Use a checkpoint trained with the same BOARD_SIZE and MAX_WALLS.
+MODEL_PATH = "model/PolicyValueNet_alphazero_latest.pth"
+
+game = GridGameAi(grid_size=BOARD_SIZE, max_walls=MAX_WALLS)
 
 CELL = 60
 SIDE_PANEL = 330
@@ -179,8 +188,16 @@ def draw_sidebar():
     txt1 = font.render("Press 'M' to switch to move mode", True, (0, 0, 0))
     txt2 = font.render("Press 'W' to switch to wall mode", True, (0, 0, 0))
     txt3 = font.render("Hold 'LShift' to change wall orientation", True, (0, 0, 0))
-    txt4 = font.render(f"P1 walls: {game.p1_available_walls}", True, (0, 0, 200))
-    txt5 = font.render(f"P2 walls: {game.p2_available_walls}", True, (200, 0, 0))
+    txt4 = font.render(
+        f"P1 walls: {game.p1_available_walls}/{game.max_walls}",
+        True,
+        (0, 0, 200),
+    )
+    txt5 = font.render(
+        f"P2 walls: {game.p2_available_walls}/{game.max_walls}",
+        True,
+        (200, 0, 0),
+    )
     txt6 = font.render(
         f" Turn: player {'blue' if game.turn == 1 else 'red'}",
         True,
@@ -208,21 +225,46 @@ def draw_sidebar():
 # ---------------------------
 
 
-def load_model_into_agent(checkpoint_path):
+def load_model_into_agent(checkpoint_path, board_size, max_walls):
 
     checkpoint_path = Path(checkpoint_path)
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    agent = AlphaZeroSelfPlayAgent(lr=0.001, temperature=0.0)
+    num_actions = GridGameAi(grid_size=board_size, max_walls=max_walls).total_actions
+    agent = AlphaZeroSelfPlayAgent(
+        lr=0.001,
+        temperature=0.0,
+        board_size=board_size,
+        max_walls=max_walls,
+        num_actions=num_actions,
+    )
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        checkpoint_board_size = checkpoint.get("board_size")
+        checkpoint_max_walls = checkpoint.get("max_walls")
+        if checkpoint_board_size is not None and checkpoint_board_size != board_size:
+            raise ValueError(
+                f"Checkpoint board_size={checkpoint_board_size}, "
+                f"but this demo uses BOARD_SIZE={board_size}."
+            )
+        if checkpoint_max_walls is not None and checkpoint_max_walls != max_walls:
+            raise ValueError(
+                f"Checkpoint max_walls={checkpoint_max_walls}, "
+                f"but this demo uses MAX_WALLS={max_walls}."
+            )
         state_dict = checkpoint["model_state_dict"]
     else:
         state_dict = checkpoint
 
-    agent.model.load_state_dict(state_dict)
+    try:
+        agent.model.load_state_dict(state_dict)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Could not load the checkpoint. Make sure BOARD_SIZE and MAX_WALLS "
+            "match the model you trained."
+        ) from exc
     agent.model.eval()
     return agent
 
@@ -234,11 +276,17 @@ if __name__ == "__main__":
     # game_mode = "1"  # classica
     # game_mode = "2"  # umano vs IA
     game_mode = "2"
-    num_simulations = 100
+    num_simulations = 50
     agent = None
     if game_mode == "2":
         print("Loading model...")
-        agent = load_model_into_agent("model/PolicyValueNet_alphazero_latest.pth")
+        print(f"Board: {BOARD_SIZE}x{BOARD_SIZE} | Max walls: {MAX_WALLS}")
+        print(f"Total action slots: {game.total_actions}")
+        agent = load_model_into_agent(
+            MODEL_PATH,
+            board_size=BOARD_SIZE,
+            max_walls=MAX_WALLS,
+        )
         print("Model loaded. Starting game against AI (you are P1 - blue).\n")
 
     running = True

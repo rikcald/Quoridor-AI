@@ -24,8 +24,24 @@ MOVE_ACTIONS = [
     "right-down",
 ]
 NUM_MOVE_ACTIONS = len(MOVE_ACTIONS)
-NUM_WALL_POS = (9 - 1) ** 2
-TOTAL_ACTIONS = NUM_MOVE_ACTIONS + 2 * NUM_WALL_POS
+
+# Board configuration defaults for the fast training variant.
+# To train on the classic board, use grid_size=9 and max_walls=10 when
+# creating GridGameAi and AlphaZeroSelfPlayAgent.
+DEFAULT_GRID_SIZE = 5
+DEFAULT_MAX_WALLS = 4
+
+
+def num_wall_positions_for_grid(grid_size):
+    return (grid_size - 1) ** 2
+
+
+def total_actions_for_grid(grid_size):
+    return NUM_MOVE_ACTIONS + 2 * num_wall_positions_for_grid(grid_size)
+
+
+NUM_WALL_POS = num_wall_positions_for_grid(DEFAULT_GRID_SIZE)
+TOTAL_ACTIONS = total_actions_for_grid(DEFAULT_GRID_SIZE)
 BASE_DIRECTIONS = {
     "up": (-1, 0),
     "down": (1, 0),
@@ -68,8 +84,11 @@ class GridGameAi:
     - MCTS clones this object to explore hypothetical continuations
     """
 
-    def __init__(self, grid_size=9):
+    def __init__(self, grid_size=DEFAULT_GRID_SIZE, max_walls=DEFAULT_MAX_WALLS):
         self.grid_size = grid_size
+        self.max_walls = max_walls
+        self.num_wall_positions = num_wall_positions_for_grid(grid_size)
+        self.total_actions = total_actions_for_grid(grid_size)
         self.reset()
 
     def reset(self):
@@ -86,14 +105,17 @@ class GridGameAi:
         self.p2_horizontal_walls = set()
         self.p2_vertical_walls = set()
 
-        self.p1_available_walls = 10
-        self.p2_available_walls = 10
+        self.p1_available_walls = self.max_walls
+        self.p2_available_walls = self.max_walls
         self.turn = P1
         self._valid_actions_cache = {}
 
     def clone(self):
         cloned = self.__class__.__new__(self.__class__)
         cloned.grid_size = self.grid_size
+        cloned.max_walls = self.max_walls
+        cloned.num_wall_positions = self.num_wall_positions
+        cloned.total_actions = self.total_actions
         cloned.grid = self.grid.copy()
         cloned.p1_pos = self.p1_pos.copy()
         cloned.p2_pos = self.p2_pos.copy()
@@ -136,7 +158,7 @@ class GridGameAi:
                 direction = flip_direction_for_p2(direction)
             return "move", direction
 
-        if action < NUM_MOVE_ACTIONS + NUM_WALL_POS:
+        if action < NUM_MOVE_ACTIONS + self.num_wall_positions:
             wall_index = action - NUM_MOVE_ACTIONS
             row = wall_index // (self.grid_size - 1)
             col = wall_index % (self.grid_size - 1)
@@ -144,7 +166,7 @@ class GridGameAi:
                 row = self._flip_wall_row_for_p2(row)
             return "wall", (row, col), "h"
 
-        wall_index = action - NUM_MOVE_ACTIONS - NUM_WALL_POS
+        wall_index = action - NUM_MOVE_ACTIONS - self.num_wall_positions
         row = wall_index // (self.grid_size - 1)
         col = wall_index % (self.grid_size - 1)
         if player == P2:
@@ -170,7 +192,7 @@ class GridGameAi:
             wall_index = row * (self.grid_size - 1) + col
             if orientation == "h":
                 return NUM_MOVE_ACTIONS + wall_index
-            return NUM_MOVE_ACTIONS + NUM_WALL_POS + wall_index
+            return NUM_MOVE_ACTIONS + self.num_wall_positions + wall_index
 
         raise ValueError(f"Invalid action encoding: {action_type}, {args}")
 
@@ -221,8 +243,9 @@ class GridGameAi:
         for r, c in opp_vertical_walls:
             state[3, self._transform_wall_row(r, player), c] = 1.0
 
-        state[4, :, :] = my_available_walls / 10.0
-        state[5, :, :] = opp_available_walls / 10.0
+        wall_scale = max(1, self.max_walls)
+        state[4, :, :] = my_available_walls / wall_scale
+        state[5, :, :] = opp_available_walls / wall_scale
 
         return state
 
@@ -235,7 +258,7 @@ class GridGameAi:
         return self.get_canonical_state(self.turn)
 
     def get_action_mask(self, player):
-        mask = np.zeros(TOTAL_ACTIONS, dtype=np.float32)
+        mask = np.zeros(self.total_actions, dtype=np.float32)
         mask[self.get_valid_actions(player)] = 1.0
         return mask
 
@@ -391,6 +414,9 @@ class GridGameAi:
     def to_dict(self):
         return {
             "grid_size": self.grid_size,
+            "max_walls": self.max_walls,
+            "num_wall_positions": self.num_wall_positions,
+            "total_actions": self.total_actions,
             "turn": self.turn,
             "p1_pos": tuple(self.p1_pos.tolist()),
             "p2_pos": tuple(self.p2_pos.tolist()),

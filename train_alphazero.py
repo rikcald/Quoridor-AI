@@ -36,8 +36,14 @@ def main():
     # 1. TRAINING SETTINGS
     # ============================================================
 
+    # Board variant:
+    # - fast exam-friendly training: board_size=5, max_walls=4
+    # - classic Quoridor: board_size=9, max_walls=10
+    board_size = 5
+    max_walls = 4
+
     num_games = 50
-    max_steps_per_game = 400
+    max_steps_per_game = 100
 
     learning_rate = 0.001
 
@@ -63,6 +69,8 @@ def main():
     # 2. PRINT THE CONFIGURATION
     # ============================================================
     print("\n=== AlphaZero Training Configuration ===")
+    print(f"Board size: {board_size}x{board_size}")
+    print(f"Max walls per player: {max_walls}")
     print(f"Games: {num_games}")
     print(f"Max steps per game: {max_steps_per_game}")
     print(f"Learning rate: {learning_rate}")
@@ -86,13 +94,17 @@ def main():
     # ============================================================
     # Environment:
     # owns the board state, legal moves, winner detection, canonical state, etc.
-    env = GridGameAi()
+    env = GridGameAi(grid_size=board_size, max_walls=max_walls)
+    print(f"Total action slots: {env.total_actions}")
 
     # Agent:
     # owns the policy-value network, AlphaZero trainer, and replay/examples buffer.
     agent = AlphaZeroSelfPlayAgent(
         lr=learning_rate,
         temperature=temperature,
+        board_size=board_size,
+        max_walls=max_walls,
+        num_actions=env.total_actions,
     )
 
     # Optional pygame visualization.

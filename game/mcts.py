@@ -2,8 +2,6 @@ import math
 
 import numpy as np
 
-from game_logic_Ai import TOTAL_ACTIONS
-
 
 class MCTSNode:
     """
@@ -123,6 +121,7 @@ class MCTS:
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
         self.add_dirichlet_noise = add_dirichlet_noise
+        self.num_actions = agent.num_actions
 
     def run(self, root_state):
         """
@@ -225,15 +224,15 @@ class MCTS:
         """
         Convert root visit counts into the AlphaZero target policy pi.
 
-        Output shape is always (TOTAL_ACTIONS,), with 0 for actions not expanded
+        Output shape is always (num_actions,), with 0 for actions not expanded
         from the root.
         """
-        action_probs = np.zeros(TOTAL_ACTIONS, dtype=np.float32)
+        action_probs = np.zeros(self.num_actions, dtype=np.float32)
 
         if not root.children:
             return action_probs
 
-        visit_counts = np.zeros(TOTAL_ACTIONS, dtype=np.float32)
+        visit_counts = np.zeros(self.num_actions, dtype=np.float32)
         for action, child in root.children.items():
             visit_counts[action] = child.visit_count
 
@@ -260,7 +259,7 @@ class MCTS:
         Sample one action from the root visit distribution.
         """
         action_probs = self.get_action_probs(root, temperature=temperature)
-        return int(np.random.choice(np.arange(TOTAL_ACTIONS), p=action_probs))
+        return int(np.random.choice(np.arange(self.num_actions), p=action_probs))
 
     def _select_leaf(self, root):
         node = root
