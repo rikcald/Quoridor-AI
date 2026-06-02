@@ -18,7 +18,7 @@ RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 MAX_STEPS_PER_GAME = 400
 ALPHAZERO_BATCH_SIZE = 64
-TIMEOUT_ADJUDICATION_VALUE = 0.3
+DEFAULT_TIMEOUT_ADJUDICATION_VALUE = 0
 
 
 def train_alphazero_self_play(
@@ -34,6 +34,7 @@ def train_alphazero_self_play(
     temperature=1.0,
     temperature_drop_step=10,
     mcts_batch_size=1,
+    timeout_adjudication_value=DEFAULT_TIMEOUT_ADJUDICATION_VALUE,
 ):
     """
     Full AlphaZero-style self-play loop.
@@ -69,7 +70,9 @@ def train_alphazero_self_play(
     }
 
     metrics_csv_path = METRICS_DIR / f"alphazero_self_play_metrics_{RUN_TIMESTAMP}.csv"
-    metrics_json_path = METRICS_DIR / f"alphazero_self_play_summary_{RUN_TIMESTAMP}.json"
+    metrics_json_path = (
+        METRICS_DIR / f"alphazero_self_play_summary_{RUN_TIMESTAMP}.json"
+    )
 
     for game_num in range(num_games):
         env.reset()
@@ -139,7 +142,7 @@ def train_alphazero_self_play(
             # teaching the value head that every unfinished game is neutral,
             # give a weak +/- signal to the player with the shorter legal path.
             winner = env.get_timeout_adjudication_winner()
-            target_value_strength = TIMEOUT_ADJUDICATION_VALUE
+            target_value_strength = timeout_adjudication_value
             adjudicated_timeout = winner is not None
         else:
             winner = env.get_winner()

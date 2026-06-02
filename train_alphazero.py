@@ -51,6 +51,7 @@ def main():
     # e.g. 1.0 = more exploration, 0.0 = always pick the most visited move.
     temperature = 1.0
     temperature_drop_step = 10
+    timeout_adjudication_value = 0.0  # If a game hits the max step limit, assign this value to both players for training purposes.
 
     use_training_ui = False
     ui_show_every = 1
@@ -72,6 +73,7 @@ def main():
     print(f"Dirichlet epsilon: {root_dirichlet_epsilon}")
     print(f"Temperature: {temperature}")
     print(f"Temperature drop step: {temperature_drop_step}")
+    print(f"Timeout adjudication value: {timeout_adjudication_value}")
     print(f"Use training UI: {use_training_ui}")
     print(f"UI show every: {ui_show_every}")
     print(f"UI speed: {ui_speed}")
@@ -137,6 +139,7 @@ def main():
         root_dirichlet_epsilon=root_dirichlet_epsilon,
         temperature=temperature,
         temperature_drop_step=temperature_drop_step,
+        timeout_adjudication_value=timeout_adjudication_value,
     )
 
 
