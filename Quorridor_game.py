@@ -16,15 +16,32 @@ from game.mcts import MCTS
 
 pygame.init()
 
-# Board variant:
-# - fast exam-friendly play/demo: BOARD_SIZE=5, MAX_WALLS=4
-# - classic Quoridor: BOARD_SIZE=9, MAX_WALLS=10
+# ============================================================
+# PLAY AGAINST MODEL CONFIG
+# ============================================================
+# Edit these values to choose the model and variant you want to test.
+#
+# For the fast variant use BOARD_SIZE=5 and MAX_WALLS=4.
+# For classic Quoridor use BOARD_SIZE=9 and MAX_WALLS=10, but only with
+# checkpoints trained on the same board variant.
+MODEL_PATH = (
+    PROJECT_ROOT
+    / "quoridor_alphazero_runs"
+    / "run_20260603_134015"
+    / "models"
+    / "latest_model.pth"
+)
+MODEL_NAME = "latest_model"
 BOARD_SIZE = 5
 MAX_WALLS = 4
+HUMAN_PLAYER = 1  # 1 = blue starts from bottom, 2 = red starts from top
+AI_NUM_SIMULATIONS = 8000
+AI_TEMPERATURE = 0.0
+AI_C_PUCT = 1.5
 
-# Use a checkpoint trained with the same BOARD_SIZE and MAX_WALLS.
-MODEL_PATH = "model/PolicyValueNet_alphazero_latest.pth"
-
+# Board variant:
+# - fast   play/demo: BOARD_SIZE=5, MAX_WALLS=4
+# - classic Quoridor: BOARD_SIZE=9, MAX_WALLS=10
 game = GridGameAi(grid_size=BOARD_SIZE, max_walls=MAX_WALLS)
 
 CELL = 60
@@ -203,6 +220,13 @@ def draw_sidebar():
         True,
         (0, 0, 255) if game.turn == 1 else (255, 0, 0),
     )
+    txt7 = font.render(
+        f"Human: P{HUMAN_PLAYER} | AI: P{ai_player}",
+        True,
+        (0, 0, 0),
+    )
+    txt8 = font.render(f"Model: {MODEL_NAME}", True, (0, 0, 0))
+    txt9 = font.render(f"AI sims: {AI_NUM_SIMULATIONS}", True, (0, 0, 0))
 
     screen.blit(txt1, (CELL * game.grid_size + 10, 20))
     screen.blit(txt2, (CELL * game.grid_size + 10, 50))
@@ -210,19 +234,29 @@ def draw_sidebar():
     screen.blit(txt4, (CELL * game.grid_size + 10, 110))
     screen.blit(txt5, (CELL * game.grid_size + 10, 140))
     screen.blit(txt6, (CELL * game.grid_size + 10, 170))
+    screen.blit(txt7, (CELL * game.grid_size + 10, 200))
+    screen.blit(txt8, (CELL * game.grid_size + 10, 230))
+    screen.blit(txt9, (CELL * game.grid_size + 10, 260))
 
     if ui_message1:
         msg_surface = font.render(ui_message1, True, (0, 0, 0))
-        screen.blit(msg_surface, (CELL * game.grid_size + 10, 180))
+        screen.blit(msg_surface, (CELL * game.grid_size + 10, 290))
     if winner:
         font_big = pygame.font.SysFont(None, 36)
         txt = font_big.render(f"P{winner} WINS!", True, (0, 220, 0))
-        screen.blit(txt, (CELL * game.grid_size + 10, 200))
+        screen.blit(txt, (CELL * game.grid_size + 10, 320))
 
 
 # ---------------------------
 # MODEL
 # ---------------------------
+
+
+def infer_num_filters_from_state_dict(state_dict):
+    first_conv = state_dict.get("trunk.0.block.0.weight")
+    if first_conv is None:
+        return 64
+    return int(first_conv.shape[0])
 
 
 def load_model_into_agent(checkpoint_path, board_size, max_walls):
@@ -231,17 +265,10 @@ def load_model_into_agent(checkpoint_path, board_size, max_walls):
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    num_actions = GridGameAi(grid_size=board_size, max_walls=max_walls).total_actions
-    agent = AlphaZeroSelfPlayAgent(
-        lr=0.001,
-        temperature=0.0,
-        board_size=board_size,
-        max_walls=max_walls,
-        num_actions=num_actions,
-    )
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-
-    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+    loaded_checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    if isinstance(loaded_checkpoint, dict) and "model_state_dict" in loaded_checkpoint:
+        checkpoint = loaded_checkpoint
+        state_dict = checkpoint["model_state_dict"]
         checkpoint_board_size = checkpoint.get("board_size")
         checkpoint_max_walls = checkpoint.get("max_walls")
         if checkpoint_board_size is not None and checkpoint_board_size != board_size:
@@ -254,40 +281,87 @@ def load_model_into_agent(checkpoint_path, board_size, max_walls):
                 f"Checkpoint max_walls={checkpoint_max_walls}, "
                 f"but this demo uses MAX_WALLS={max_walls}."
             )
-        state_dict = checkpoint["model_state_dict"]
     else:
-        state_dict = checkpoint
+        checkpoint = {}
+        state_dict = loaded_checkpoint
+
+    num_filters = checkpoint.get(
+        "num_filters",
+        checkpoint.get("metadata", {}).get(
+            "num_filters",
+            infer_num_filters_from_state_dict(state_dict),
+        ),
+    )
+    num_actions = GridGameAi(grid_size=board_size, max_walls=max_walls).total_actions
+    agent = AlphaZeroSelfPlayAgent(
+        lr=0.001,
+        temperature=0.0,
+        board_size=board_size,
+        max_walls=max_walls,
+        num_actions=num_actions,
+        num_filters=num_filters,
+    )
 
     try:
         agent.model.load_state_dict(state_dict)
     except RuntimeError as exc:
         raise RuntimeError(
             "Could not load the checkpoint. Make sure BOARD_SIZE and MAX_WALLS "
-            "match the model you trained."
+            f"match the model you trained. Inferred num_filters={num_filters}."
         ) from exc
     agent.model.eval()
     return agent
+
+
+def is_human_turn():
+    return game.turn == HUMAN_PLAYER
+
+
+def reset_match():
+    global winner, ui_message1, mode
+    game.reset()
+    winner = None
+    ui_message1 = None
+    mode = "move"
+
+
+def play_ai_turn(agent):
+    search = MCTS(
+        agent=agent,
+        num_simulations=AI_NUM_SIMULATIONS,
+        c_puct=AI_C_PUCT,
+        add_dirichlet_noise=False,
+    )
+    root = search.run(game)
+    action = search.select_action(root, temperature=AI_TEMPERATURE)
+    _, _, info = game.apply_action(action)
+    if info.get("invalid", False):
+        raise RuntimeError(f"AI selected invalid action {action}")
+    return action
 
 
 # ---------------------------
 # GAME LOOP
 # ---------------------------
 if __name__ == "__main__":
-    # game_mode = "1"  # classica
-    # game_mode = "2"  # umano vs IA
-    game_mode = "2"
-    num_simulations = 50
+    if HUMAN_PLAYER not in (1, 2):
+        raise ValueError("HUMAN_PLAYER must be 1 or 2")
+
+    ai_player = 2 if HUMAN_PLAYER == 1 else 1
     agent = None
-    if game_mode == "2":
-        print("Loading model...")
-        print(f"Board: {BOARD_SIZE}x{BOARD_SIZE} | Max walls: {MAX_WALLS}")
-        print(f"Total action slots: {game.total_actions}")
-        agent = load_model_into_agent(
-            MODEL_PATH,
-            board_size=BOARD_SIZE,
-            max_walls=MAX_WALLS,
-        )
-        print("Model loaded. Starting game against AI (you are P1 - blue).\n")
+
+    print("Loading model...")
+    print(f"Model: {MODEL_NAME}")
+    print(f"Path: {MODEL_PATH}")
+    print(f"Board: {BOARD_SIZE}x{BOARD_SIZE} | Max walls: {MAX_WALLS}")
+    print(f"Total action slots: {game.total_actions}")
+    print(f"Human player: P{HUMAN_PLAYER} | AI player: P{ai_player}")
+    agent = load_model_into_agent(
+        MODEL_PATH,
+        board_size=BOARD_SIZE,
+        max_walls=MAX_WALLS,
+    )
+    print("Model loaded. Starting game against AI.\n")
 
     running = True
     winner = None
@@ -307,6 +381,8 @@ if __name__ == "__main__":
                     mode = "move"
                 elif event.key == pygame.K_w:
                     mode = "wall"
+                elif event.key == pygame.K_r:
+                    reset_match()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if winner is not None:
@@ -314,9 +390,8 @@ if __name__ == "__main__":
 
                 player = game.turn
 
-                # Solo l'umano può cliccare, o in modalità "1" qualsiasi giocatore
-                if game_mode == "2" and player == 2:
-                    continue  # L'IA sta per giocare, ignora click umani
+                if not is_human_turn():
+                    continue
 
                 # ---------------- MOVE ----------------
                 if mode == "move":
@@ -354,9 +429,7 @@ if __name__ == "__main__":
         draw_sidebar()
 
         # Draw preview solo se la partita non è finita e se è il turno di un umano (in modalità 2)
-        if winner is None and (
-            game_mode == "1" or (game_mode == "2" and game.turn == 1)
-        ):
+        if winner is None and is_human_turn():
             if mode == "move":
                 draw_move_preview()
             else:
@@ -366,18 +439,10 @@ if __name__ == "__main__":
         clock.tick(60)
 
         # ---------------- AI TURN ----------------
-        if game_mode == "2" and game.turn == 2 and winner is None:
-            search = MCTS(
-                agent=agent,
-                num_simulations=num_simulations,
-                c_puct=1.5,
-                add_dirichlet_noise=False,
-            )
-            root = search.run(game)
-            action = search.select_action(root, temperature=0.0)
-
-            _, done, info = game.apply_action(action)
+        if not is_human_turn() and winner is None:
+            action = play_ai_turn(agent)
             winner = game.check_winner()
-            ui_message1 = "AI played!"
+            action_type = "wall" if action >= NUM_MOVE_ACTIONS else "move"
+            ui_message1 = f"AI played {action_type}"
 
     pygame.quit()
