@@ -32,7 +32,9 @@ def train_alphazero_self_play(
     root_dirichlet_alpha=0.3,
     root_dirichlet_epsilon=0.25,
     temperature=1.0,
+    temperature_after_drop=0.0,
     temperature_drop_step=10,
+    target_policy_temperature=1.0,
     mcts_batch_size=1,
     timeout_adjudication_value=DEFAULT_TIMEOUT_ADJUDICATION_VALUE,
 ):
@@ -81,7 +83,7 @@ def train_alphazero_self_play(
         step_count = 0
         wall_count = 0
         invalid_count = 0
-        root_temperature = temperature
+        action_temperature = temperature
 
         print(
             f"\n================ Starting AlphaZero Self-Play Game {game_num + 1} ================"
@@ -107,12 +109,21 @@ def train_alphazero_self_play(
             else:
                 root = search.run(env)
 
-            # Early in the game we keep more exploration, later we collapse
-            # toward the most visited move.
-            root_temperature = (
-                temperature if step_count < temperature_drop_step else 0.0
+            # Action temperature controls how self-play chooses the actual move.
+            # e.g. 1.0 samples from visit counts; 0.0 always plays the most visited move.
+            action_temperature = (
+                temperature
+                if step_count < temperature_drop_step
+                else temperature_after_drop
             )
-            target_policy = search.get_action_probs(root, temperature=root_temperature)
+
+            # Target policy temperature controls what the network is trained to imitate.
+            # Keeping this at 1.0 gives a soft target such as 70/20/10 instead of
+            # a one-hot target like 100/0/0, even when actions are played greedily.
+            target_policy = search.get_action_probs(
+                root,
+                temperature=target_policy_temperature,
+            )
 
             agent.record_policy_example(
                 state=canonical_state,
@@ -120,7 +131,7 @@ def train_alphazero_self_play(
                 player=current_player,
             )
 
-            action = search.select_action(root, temperature=root_temperature)
+            action = search.select_action(root, temperature=action_temperature)
             _, done, info = env.apply_action(action)
 
             if info.get("invalid", False):
@@ -201,9 +212,9 @@ def train_alphazero_self_play(
         stats["shared_scores"].append(shared_score)
         stats["timeouts"].append(1 if timeout_reached else 0)
         stats["adjudicated_timeouts"].append(1 if adjudicated_timeout else 0)
-        # Reuse the old plot layout: here "exploration" means root temperature.
-        stats["exploration_rate_p1"].append(root_temperature)
-        stats["exploration_rate_p2"].append(root_temperature)
+        # Reuse the old plot layout: here "exploration" means action temperature.
+        stats["exploration_rate_p1"].append(action_temperature)
+        stats["exploration_rate_p2"].append(action_temperature)
         stats["policy_loss"].append(train_info["policy_loss"])
         stats["value_loss"].append(train_info["value_loss"])
         stats["total_loss"].append(train_info["total_loss"])
@@ -227,7 +238,10 @@ def train_alphazero_self_play(
                 "policy_loss": round(train_info["policy_loss"], 6),
                 "value_loss": round(train_info["value_loss"], 6),
                 "total_loss": round(train_info["total_loss"], 6),
-                "root_temperature": root_temperature,
+                "action_temperature": action_temperature,
+                "temperature_after_drop": temperature_after_drop,
+                "temperature_drop_step": temperature_drop_step,
+                "target_policy_temperature": target_policy_temperature,
                 "num_simulations": num_simulations,
                 "mcts_batch_size": mcts_batch_size,
             },
