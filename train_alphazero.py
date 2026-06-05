@@ -53,10 +53,15 @@ def main():
     root_dirichlet_alpha = 0.3
     root_dirichlet_epsilon = 0.25
 
-    # Temperature controls exploration when sampling from MCTS visit counts.
-    # e.g. 1.0 = more exploration, 0.0 = always pick the most visited move.
+    # Action temperature controls how self-play chooses the move to actually play.
+    # e.g. 1.0 samples from visit counts; 0.0 always picks the most visited move.
     temperature = 1.0
+    temperature_after_drop = 0.0
     temperature_drop_step = 10
+    # Target policy temperature controls what the network learns from MCTS visits.
+    # e.g. keep this at 1.0 to train on a soft 70/20/10 target, even if action
+    # temperature drops to 0.0 and self-play chooses greedily.
+    target_policy_temperature = 1.0
     timeout_adjudication_value = 0.0  # If a game hits the max step limit, assign this value to both players for training purposes.
 
     use_training_ui = False
@@ -79,8 +84,10 @@ def main():
     print(f"c_puct: {c_puct}")
     print(f"Dirichlet alpha: {root_dirichlet_alpha}")
     print(f"Dirichlet epsilon: {root_dirichlet_epsilon}")
-    print(f"Temperature: {temperature}")
+    print(f"Action temperature: {temperature}")
+    print(f"Action temperature after drop: {temperature_after_drop}")
     print(f"Temperature drop step: {temperature_drop_step}")
+    print(f"Target policy temperature: {target_policy_temperature}")
     print(f"Timeout adjudication value: {timeout_adjudication_value}")
     print(f"Use training UI: {use_training_ui}")
     print(f"UI show every: {ui_show_every}")
@@ -150,7 +157,9 @@ def main():
         root_dirichlet_alpha=root_dirichlet_alpha,
         root_dirichlet_epsilon=root_dirichlet_epsilon,
         temperature=temperature,
+        temperature_after_drop=temperature_after_drop,
         temperature_drop_step=temperature_drop_step,
+        target_policy_temperature=target_policy_temperature,
         timeout_adjudication_value=timeout_adjudication_value,
     )
 

@@ -56,11 +56,13 @@ class AlphaZeroSelfPlayAgent:
         board_size=DEFAULT_GRID_SIZE,
         max_walls=DEFAULT_MAX_WALLS,
         num_actions=None,
+        num_filters=64,
     ):
         self.n_games = 0
         self.temperature = temperature
         self.board_size = board_size
         self.max_walls = max_walls
+        self.num_filters = num_filters
         self.num_actions = (
             total_actions_for_grid(board_size) if num_actions is None else num_actions
         )
@@ -68,6 +70,7 @@ class AlphaZeroSelfPlayAgent:
             input_channels=6,
             board_size=self.board_size,
             num_actions=self.num_actions,
+            num_filters=self.num_filters,
         )
         self.trainer = AlphaZeroTrainer(self.model, lr=lr)
         self.examples = deque(maxlen=MAX_MEMORY)
@@ -177,6 +180,7 @@ class AlphaZeroSelfPlayAgent:
             "board_size": self.board_size,
             "max_walls": self.max_walls,
             "num_actions": self.num_actions,
+            "num_filters": self.num_filters,
         }
 
         if extra_metadata is not None:
