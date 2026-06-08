@@ -12,6 +12,35 @@ domain.
 <p align="center">
   <img src="assets/quoridor_game_gif_example.gif" width="300" alt="Mini-Quoridor demo">
 </p>
+
+## Play Against the Model
+
+Run the human-vs-AI demo:
+
+```powershell
+.\venv\Scripts\python.exe .\play_vs_ai.py
+```
+
+The demo lets the user choose the AI search budget:
+
+| Difficulty | MCTS simulations per AI move |
+|---|---:|
+| Easy | 20 |
+| Medium | 200 |
+| Challenging | 1000 |
+| Hard | 10000 |
+
+Controls:
+
+```text
+M      move mode
+W      wall mode
+H/V    wall orientation
+Space  toggle wall orientation
+R      restart
+Esc    quit
+```
+
 ## Project Overview
 
 Quoridor is a deterministic two-player board game where each player tries to
@@ -97,33 +126,6 @@ Average steps: 20.55
 Timeouts: 13 / 500 = 2.6%
 Average policy loss: 1.366
 Average value loss: 0.385
-```
-## Playing Against the Model
-
-Run the human-vs-AI demo:
-
-```powershell
-.\venv\Scripts\python.exe .\play_vs_ai.py
-```
-
-The demo lets the user choose the AI search budget:
-
-| Difficulty | MCTS simulations per AI move |
-|---|---:|
-| Easy | 20 |
-| Medium | 200 |
-| Challenging | 1000 |
-| Hard | 10000 |
-
-Controls:
-
-```text
-M      move mode
-W      wall mode
-H/V    wall orientation
-Space  toggle wall orientation
-R      restart
-Esc    quit
 ```
 
 ## Comparing Checkpoints
