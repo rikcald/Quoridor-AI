@@ -9,7 +9,7 @@ DeepMind-scale AlphaZero, but to implement the core ideas of self-play,
 Monte Carlo Tree Search, and policy-value neural networks in a smaller strategic
 domain.
 
-![Mini-Quoridor demo](assets\quoridor_game_gif_example.gif)
+![Mini-Quoridor demo](assets/quoridor_game_gif_example.gif)
 
 ## Project Overview
 
@@ -97,9 +97,6 @@ Timeouts: 13 / 500 = 2.6%
 Average policy loss: 1.366
 Average value loss: 0.385
 ```
-
-![Training metrics](assets/training_metrics_3_5_puct.png)
-
 ## Playing Against the Model
 
 Run the human-vs-AI demo:
