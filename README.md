@@ -23,20 +23,6 @@ The implemented agent learns entirely from self-play. At each move, Monte Carlo
 Tree Search improves the raw neural-network policy; after each game, the final
 outcome is used to train a convolutional policy-value network.
 
-## AlphaZero Pipeline
-
-```mermaid
-flowchart LR
-    A["Mini-Quoridor Environment"] --> B["Canonical State"]
-    B --> C["Policy-Value CNN"]
-    C --> D["MCTS with PUCT"]
-    D --> E["Improved Policy from Visit Counts"]
-    E --> F["Self-Play Move"]
-    F --> A
-    E --> G["Replay Buffer: state, policy, value"]
-    G --> H["Network Training"]
-    H --> C
-```
 
 ## Main Components
 
