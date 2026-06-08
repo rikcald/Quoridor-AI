@@ -34,8 +34,12 @@ BOARD_SIZE = 5
 MAX_WALLS = 4
 HUMAN_PLAYER = 1
 AI_C_PUCT = 2.5
-AI_TEMPERATURE = 0.0
-MAX_STEPS_PER_GAME = 120
+# AI move temperature controls how the AI samples from MCTS root visits.
+# Example: 1.0 samples proportionally from visits; 0.0 plays the most visited move.
+AI_TEMPERATURE = 1.0
+AI_TEMPERATURE_AFTER_DROP = 0.0
+AI_TEMPERATURE_DROP_STEP = 4
+MAX_STEPS_PER_GAME = 70
 
 DIFFICULTIES = [
     ("Easy", 20, "Fast search, useful for a quick demo."),
@@ -280,7 +284,8 @@ def play_ai_turn():
         add_dirichlet_noise=False,
     )
     root = search.run(game)
-    action = search.select_action(root, temperature=AI_TEMPERATURE)
+    action_temperature = get_ai_temperature()
+    action = search.select_action(root, temperature=action_temperature)
     _, _, info = game.apply_action(action)
 
     if info.get("invalid", False):
@@ -289,6 +294,14 @@ def play_ai_turn():
     step_count += 1
     action_type = "wall" if action >= NUM_MOVE_ACTIONS else "move"
     ui_message = f"AI played a {action_type}."
+
+
+def get_ai_temperature():
+    if AI_TEMPERATURE_DROP_STEP <= 0:
+        return AI_TEMPERATURE
+    if step_count < AI_TEMPERATURE_DROP_STEP:
+        return AI_TEMPERATURE
+    return AI_TEMPERATURE_AFTER_DROP
 
 
 def get_result_text():
