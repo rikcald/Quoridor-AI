@@ -9,8 +9,9 @@ DeepMind-scale AlphaZero, but to implement the core ideas of self-play,
 Monte Carlo Tree Search, and policy-value neural networks in a smaller strategic
 domain.
 
-![Mini-Quoridor demo](assets/quoridor_game_gif_example.gif)
-
+<p align="center">
+  <img src="assets/quoridor_game_gif_example.gif" width="300" alt="Mini-Quoridor demo">
+</p>
 ## Project Overview
 
 Quoridor is a deterministic two-player board game where each player tries to
