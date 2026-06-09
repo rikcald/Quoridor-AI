@@ -24,7 +24,7 @@ from mcts import MCTS  # noqa: E402
 MODEL_PATH = (
     PROJECT_ROOT
     / "quoridor_alphazero_runs"
-    / "run_20260606_112507_2.5c_puct_best"
+    / "run_20260608_225259"
     / "models"
     / "latest_model.pth"
 )
