@@ -19,6 +19,8 @@ RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 MAX_STEPS_PER_GAME = 400
 ALPHAZERO_BATCH_SIZE = 64
 DEFAULT_TIMEOUT_ADJUDICATION_VALUE = 0
+TIMEOUT_ADJUDICATION_FIXED = "fixed"
+TIMEOUT_ADJUDICATION_PROPORTIONAL = "proportional"
 
 
 def train_alphazero_self_play(
@@ -37,6 +39,8 @@ def train_alphazero_self_play(
     target_policy_temperature=1.0,
     mcts_batch_size=1,
     timeout_adjudication_value=DEFAULT_TIMEOUT_ADJUDICATION_VALUE,
+    timeout_adjudication_mode=TIMEOUT_ADJUDICATION_FIXED,
+    timeout_adjudication_max_value=0.5,
 ):
     """
     Full AlphaZero-style self-play loop.
@@ -51,6 +55,19 @@ def train_alphazero_self_play(
     5. assign final z values
     6. train the policy-value network on the collected examples
     """
+    if timeout_adjudication_mode not in {
+        TIMEOUT_ADJUDICATION_FIXED,
+        TIMEOUT_ADJUDICATION_PROPORTIONAL,
+    }:
+        raise ValueError(
+            "timeout_adjudication_mode must be "
+            f"'{TIMEOUT_ADJUDICATION_FIXED}' or '{TIMEOUT_ADJUDICATION_PROPORTIONAL}'"
+        )
+    if timeout_adjudication_value < 0:
+        raise ValueError("timeout_adjudication_value cannot be negative")
+    if timeout_adjudication_max_value < 0:
+        raise ValueError("timeout_adjudication_max_value cannot be negative")
+
     record_value_loss = float("inf")
     stats = {
         "steps": [],
@@ -151,9 +168,13 @@ def train_alphazero_self_play(
         if timeout_reached:
             # A max-step cutoff is not a real terminal state. Instead of
             # teaching the value head that every unfinished game is neutral,
-            # give a weak +/- signal to the player with the shorter legal path.
-            winner = env.get_timeout_adjudication_winner()
-            target_value_strength = timeout_adjudication_value
+            # give a weak +/- signal based on legal shortest-path distance.
+            winner, target_value_strength = _adjudicate_timeout(
+                env=env,
+                mode=timeout_adjudication_mode,
+                fixed_value=timeout_adjudication_value,
+                max_value=timeout_adjudication_max_value,
+            )
             adjudicated_timeout = winner is not None
         else:
             winner = env.get_winner()
@@ -231,6 +252,8 @@ def train_alphazero_self_play(
                 "timeout": int(timeout_reached),
                 "adjudicated_timeout": int(adjudicated_timeout),
                 "target_value_strength": target_value_strength,
+                "timeout_adjudication_mode": timeout_adjudication_mode,
+                "timeout_adjudication_max_value": timeout_adjudication_max_value,
                 "walls": wall_count,
                 "invalid_moves": invalid_count,
                 "examples_generated": len(finalized_examples),
@@ -286,6 +309,30 @@ def _append_metrics_row(csv_path, row):
         if write_header:
             writer.writeheader()
         writer.writerow(row)
+
+
+def _adjudicate_timeout(env, mode, fixed_value, max_value):
+    if mode == TIMEOUT_ADJUDICATION_FIXED:
+        return env.get_timeout_adjudication_winner(), fixed_value
+
+    if mode != TIMEOUT_ADJUDICATION_PROPORTIONAL:
+        raise ValueError(
+            "timeout_adjudication_mode must be "
+            f"'{TIMEOUT_ADJUDICATION_FIXED}' or '{TIMEOUT_ADJUDICATION_PROPORTIONAL}'"
+        )
+
+    p1_distance = env.shortest_path_distance_to_goal(P1)
+    p2_distance = env.shortest_path_distance_to_goal(P2)
+
+    if not np.isfinite(p1_distance) or not np.isfinite(p2_distance):
+        return None, 0.0
+    if p1_distance == p2_distance:
+        return None, 0.0
+
+    winner = P1 if p1_distance < p2_distance else P2
+    distance_gap = abs(p1_distance - p2_distance)
+    value = min(float(max_value), distance_gap / env.grid_size)
+    return winner, value
 
 
 def _write_alphazero_metrics_summary(
