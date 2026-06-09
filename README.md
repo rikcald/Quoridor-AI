@@ -88,6 +88,10 @@ temperature = 1.0
 temperature_after_drop = 0.0
 temperature_drop_step = 8
 timeout_adjudication_value = 0.3
+num_filters = 32
+root_dirichlet_alpha = 0.15
+root_dirichlet_epsilon = 0.15
+batch_size = 128
 ```
 
 This run achieved:
