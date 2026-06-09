@@ -69,10 +69,7 @@ class MCTSNode:
         parent_visits = self.visit_count + self.virtual_visit_count
         child_visits = child.visit_count + child.virtual_visit_count
         exploration_score = (
-            c_puct
-            * child.prior
-            * math.sqrt(max(1, parent_visits))
-            / (1 + child_visits)
+            c_puct * child.prior * math.sqrt(max(1, parent_visits)) / (1 + child_visits)
         )
         return q_value + exploration_score
 
@@ -369,9 +366,3 @@ class MCTS:
     def _remove_virtual_visits(self, search_path):
         for node in search_path:
             node.virtual_visit_count -= 1
-
-
-# TODO capire questo concetto: se in tic-tac toe quando facciamo l'expansion ogni volta alla fine ci ritroveremo dopo 8 iterazioni ad aver visitato 8/8 possibilità nonostante non sia abbastanza per decretare quale mossa verrà scelta,
-# TODO però sicuramente ci darà già qualcosa e poi sicuramente esploreremo anche quelle foglie, mentre in quorridor le possibili azioni sono molte di piu, le legal action da una posizione di semi-partenza facciamo
-# TODO saranno numero_di_movement_legali+numero di posizioni di muro piazzabile legali e quindi ci aggireremo sul centinaio (almeno all'inizio), questo significa che se mi metto ad espandere questi primi nodi, già un centinaio di iterazioni sono andate,
-# TODO quindi probabilmente poi mi toccherà alzare di molto il numero di iterazioni da fare.
