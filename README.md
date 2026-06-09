@@ -13,34 +13,6 @@ domain.
   <img src="assets/quoridor_game_gif_example.gif" width="300" alt="Mini-Quoridor demo">
 </p>
 
-## Play Against the Model
-
-Run the human-vs-AI demo:
-
-```powershell
-.\venv\Scripts\python.exe .\play_vs_ai.py
-```
-
-The demo lets the user choose the AI search budget:
-
-| Difficulty | MCTS simulations per AI move |
-|---|---:|
-| Easy | 20 |
-| Medium | 200 |
-| Challenging | 1000 |
-| Hard | 10000 |
-
-Controls:
-
-```text
-M      move mode
-W      wall mode
-H/V    wall orientation
-Space  toggle wall orientation
-R      restart
-Esc    quit
-```
-
 ## Project Overview
 
 Quoridor is a deterministic two-player board game where each player tries to
@@ -147,6 +119,34 @@ hyperparameters for each agent, including:
 
 This is useful for comparing whether a checkpoint is stronger because of the
 neural network itself or because of a more favorable search configuration.
+
+## Play Against the Model
+
+Run the human-vs-AI demo:
+
+```powershell
+.\venv\Scripts\python.exe .\play_vs_ai.py
+```
+
+The demo lets the user choose the AI search budget:
+
+| Difficulty | MCTS simulations per AI move |
+|---|---:|
+| Easy | 20 |
+| Medium | 200 |
+| Challenging | 1000 |
+| Hard | 10000 |
+
+Controls:
+
+```text
+M      move mode
+W      wall mode
+H/V    wall orientation
+Space  toggle wall orientation
+R      restart
+Esc    quit
+```
 
 ## Setup
 
