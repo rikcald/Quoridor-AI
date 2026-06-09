@@ -16,3 +16,4 @@ quoridor_alphazero_runs
 benchmark_inference.py
 didactic_alphazero_trace.py
 profile_mcts.py
+plot_run_metrics.py

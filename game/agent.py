@@ -5,7 +5,11 @@ import random
 import numpy as np
 import torch
 
-from game_logic_Ai import TOTAL_ACTIONS
+from game_logic_Ai import (
+    DEFAULT_GRID_SIZE,
+    DEFAULT_MAX_WALLS,
+    total_actions_for_grid,
+)
 from model import PolicyValueNet, AlphaZeroTrainer
 
 
@@ -23,7 +27,7 @@ class AlphaZeroExample:
 
     Fields:
     - state: canonical board tensor from the acting player's perspective
-    - target_policy: distribution over the 144 action slots
+    - target_policy: distribution over the configured action slots
     - player: the real player id that owned this state
     - target_value: final result from that player's perspective
     """
@@ -45,13 +49,28 @@ class AlphaZeroSelfPlayAgent:
     - the replay buffer of (state, pi, z) examples
     """
 
-    def __init__(self, lr=0.001, temperature=1.0):
+    def __init__(
+        self,
+        lr=0.001,
+        temperature=1.0,
+        board_size=DEFAULT_GRID_SIZE,
+        max_walls=DEFAULT_MAX_WALLS,
+        num_actions=None,
+        num_filters=64,
+    ):
         self.n_games = 0
         self.temperature = temperature
+        self.board_size = board_size
+        self.max_walls = max_walls
+        self.num_filters = num_filters
+        self.num_actions = (
+            total_actions_for_grid(board_size) if num_actions is None else num_actions
+        )
         self.model = PolicyValueNet(
             input_channels=6,
-            board_size=9,
-            num_actions=TOTAL_ACTIONS,
+            board_size=self.board_size,
+            num_actions=self.num_actions,
+            num_filters=self.num_filters,
         )
         self.trainer = AlphaZeroTrainer(self.model, lr=lr)
         self.examples = deque(maxlen=MAX_MEMORY)
@@ -70,7 +89,7 @@ class AlphaZeroSelfPlayAgent:
         """
         Zero-out illegal actions and renormalize over the legal ones.
         """
-        masked_policy = np.zeros(TOTAL_ACTIONS, dtype=np.float32)
+        masked_policy = np.zeros(self.num_actions, dtype=np.float32)
         masked_policy[valid_actions] = policy[valid_actions]
 
         total_prob = float(masked_policy.sum())
@@ -98,7 +117,7 @@ class AlphaZeroSelfPlayAgent:
 
         tempered_policy = masked_policy ** (1.0 / temperature)
         tempered_policy /= tempered_policy.sum()
-        return int(np.random.choice(np.arange(TOTAL_ACTIONS), p=tempered_policy))
+        return int(np.random.choice(np.arange(self.num_actions), p=tempered_policy))
 
     def record_policy_example(self, state, target_policy, player):
         self.current_game_examples.append(
@@ -110,7 +129,7 @@ class AlphaZeroSelfPlayAgent:
             )
         )
 
-    def finalize_game_examples(self, winner):
+    def finalize_game_examples(self, winner, outcome_value=1.0):
         """
         Fill z for every stored position once the game ends.
         """
@@ -120,7 +139,12 @@ class AlphaZeroSelfPlayAgent:
             if winner is None:
                 example.target_value = 0.0
             else:
-                example.target_value = 1.0 if example.player == winner else -1.0
+                # Real terminal wins use the full +/-1 target. Timeout
+                # adjudications can pass a smaller value, because "closer to
+                # goal" is useful but less certain than an actual win.
+                example.target_value = (
+                    outcome_value if example.player == winner else -outcome_value
+                )
 
             finalized_examples.append(example)
             self.examples.append(example)
@@ -153,6 +177,10 @@ class AlphaZeroSelfPlayAgent:
             "model_state_dict": self.model.state_dict(),
             "n_games": self.n_games,
             "temperature": self.temperature,
+            "board_size": self.board_size,
+            "max_walls": self.max_walls,
+            "num_actions": self.num_actions,
+            "num_filters": self.num_filters,
         }
 
         if extra_metadata is not None:

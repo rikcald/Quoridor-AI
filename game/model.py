@@ -42,18 +42,18 @@ class PolicyValueNet(nn.Module):
     - scalar value in [-1, 1]
 
     Input:
-        (batch, 6, 9, 9)
+        (batch, 6, board_size, board_size)
 
     Output:
-        policy_logits: (batch, 144)
+        policy_logits: (batch, num_actions)
         value: (batch, 1)
     """
 
     def __init__(
         self,
         input_channels=6,
-        board_size=9,
-        num_actions=144,
+        board_size=5,
+        num_actions=48,
         num_filters=64,
     ):
         super().__init__()
@@ -181,8 +181,8 @@ class AlphaZeroTrainer:
         )
 
         # e.g. one example:
-        # state         (6, 9, 9)  -> (1, 6, 9, 9)
-        # target_policy (144,)     -> (1, 144)
+        # state         (6, board, board) -> (1, 6, board, board)
+        # target_policy (num_actions,)    -> (1, num_actions)
         # target_value  scalar     -> (1, 1)
         if len(states.shape) == 3:
             states = states.unsqueeze(0)

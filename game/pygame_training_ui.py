@@ -238,7 +238,9 @@ class TrainingUI:
         y_offset += line_height - 5
 
         txt_p1_walls = font_small.render(
-            f"Walls: {self.env.p1_available_walls}/10", True, (0, 0, 200)
+            f"Walls: {self.env.p1_available_walls}/{self.env.max_walls}",
+            True,
+            (0, 0, 200),
         )
         self.screen.blit(txt_p1_walls, (panel_x + 10, y_offset))
         y_offset += line_height + 5
@@ -256,7 +258,9 @@ class TrainingUI:
         y_offset += line_height - 5
 
         txt_p2_walls = font_small.render(
-            f"Walls: {self.env.p2_available_walls}/10", True, (200, 0, 0)
+            f"Walls: {self.env.p2_available_walls}/{self.env.max_walls}",
+            True,
+            (200, 0, 0),
         )
         self.screen.blit(txt_p2_walls, (panel_x + 10, y_offset))
         y_offset += line_height + 5
@@ -275,7 +279,11 @@ class TrainingUI:
             + len(self.env.p2_horizontal_walls)
             + len(self.env.p2_vertical_walls)
         )
-        txt_walls = font_small.render(f"Total walls: {total_walls}/20", True, (0, 0, 0))
+        txt_walls = font_small.render(
+            f"Total walls: {total_walls}/{2 * self.env.max_walls}",
+            True,
+            (0, 0, 0),
+        )
         self.screen.blit(txt_walls, (panel_x + 10, y_offset))
 
     def close(self):

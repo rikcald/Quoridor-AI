@@ -18,6 +18,9 @@ RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 MAX_STEPS_PER_GAME = 400
 ALPHAZERO_BATCH_SIZE = 64
+DEFAULT_TIMEOUT_ADJUDICATION_VALUE = 0
+TIMEOUT_ADJUDICATION_FIXED = "fixed"
+TIMEOUT_ADJUDICATION_PROPORTIONAL = "proportional"
 
 
 def train_alphazero_self_play(
@@ -31,8 +34,13 @@ def train_alphazero_self_play(
     root_dirichlet_alpha=0.3,
     root_dirichlet_epsilon=0.25,
     temperature=1.0,
+    temperature_after_drop=0.0,
     temperature_drop_step=10,
+    target_policy_temperature=1.0,
     mcts_batch_size=1,
+    timeout_adjudication_value=DEFAULT_TIMEOUT_ADJUDICATION_VALUE,
+    timeout_adjudication_mode=TIMEOUT_ADJUDICATION_FIXED,
+    timeout_adjudication_max_value=0.5,
 ):
     """
     Full AlphaZero-style self-play loop.
@@ -47,6 +55,19 @@ def train_alphazero_self_play(
     5. assign final z values
     6. train the policy-value network on the collected examples
     """
+    if timeout_adjudication_mode not in {
+        TIMEOUT_ADJUDICATION_FIXED,
+        TIMEOUT_ADJUDICATION_PROPORTIONAL,
+    }:
+        raise ValueError(
+            "timeout_adjudication_mode must be "
+            f"'{TIMEOUT_ADJUDICATION_FIXED}' or '{TIMEOUT_ADJUDICATION_PROPORTIONAL}'"
+        )
+    if timeout_adjudication_value < 0:
+        raise ValueError("timeout_adjudication_value cannot be negative")
+    if timeout_adjudication_max_value < 0:
+        raise ValueError("timeout_adjudication_max_value cannot be negative")
+
     record_value_loss = float("inf")
     stats = {
         "steps": [],
@@ -60,6 +81,7 @@ def train_alphazero_self_play(
         "invalid_moves": [],
         "shared_scores": [],
         "timeouts": [],
+        "adjudicated_timeouts": [],
         "policy_loss": [],
         "value_loss": [],
         "total_loss": [],
@@ -67,7 +89,9 @@ def train_alphazero_self_play(
     }
 
     metrics_csv_path = METRICS_DIR / f"alphazero_self_play_metrics_{RUN_TIMESTAMP}.csv"
-    metrics_json_path = METRICS_DIR / f"alphazero_self_play_summary_{RUN_TIMESTAMP}.json"
+    metrics_json_path = (
+        METRICS_DIR / f"alphazero_self_play_summary_{RUN_TIMESTAMP}.json"
+    )
 
     for game_num in range(num_games):
         env.reset()
@@ -76,7 +100,7 @@ def train_alphazero_self_play(
         step_count = 0
         wall_count = 0
         invalid_count = 0
-        root_temperature = temperature
+        action_temperature = temperature
 
         print(
             f"\n================ Starting AlphaZero Self-Play Game {game_num + 1} ================"
@@ -102,12 +126,21 @@ def train_alphazero_self_play(
             else:
                 root = search.run(env)
 
-            # Early in the game we keep more exploration, later we collapse
-            # toward the most visited move.
-            root_temperature = (
-                temperature if step_count < temperature_drop_step else 0.0
+            # Action temperature controls how self-play chooses the actual move.
+            # e.g. 1.0 samples from visit counts; 0.0 always plays the most visited move.
+            action_temperature = (
+                temperature
+                if step_count < temperature_drop_step
+                else temperature_after_drop
             )
-            target_policy = search.get_action_probs(root, temperature=root_temperature)
+
+            # Target policy temperature controls what the network is trained to imitate.
+            # Keeping this at 1.0 gives a soft target such as 70/20/10 instead of
+            # a one-hot target like 100/0/0, even when actions are played greedily.
+            target_policy = search.get_action_probs(
+                root,
+                temperature=target_policy_temperature,
+            )
 
             agent.record_policy_example(
                 state=canonical_state,
@@ -115,7 +148,7 @@ def train_alphazero_self_play(
                 player=current_player,
             )
 
-            action = search.select_action(root, temperature=root_temperature)
+            action = search.select_action(root, temperature=action_temperature)
             _, done, info = env.apply_action(action)
 
             if info.get("invalid", False):
@@ -129,11 +162,34 @@ def train_alphazero_self_play(
                 ui.render(game_num=game_num + 1, step=step_count)
 
         timeout_reached = step_count >= MAX_STEPS_PER_GAME and not env.is_terminal()
-        winner = None if timeout_reached else env.get_winner()
-        finalized_examples = agent.finalize_game_examples(winner=winner)
+        adjudicated_timeout = False
+        target_value_strength = 1.0
+
+        if timeout_reached:
+            # A max-step cutoff is not a real terminal state. Instead of
+            # teaching the value head that every unfinished game is neutral,
+            # give a weak +/- signal based on legal shortest-path distance.
+            winner, target_value_strength = _adjudicate_timeout(
+                env=env,
+                mode=timeout_adjudication_mode,
+                fixed_value=timeout_adjudication_value,
+                max_value=timeout_adjudication_max_value,
+            )
+            adjudicated_timeout = winner is not None
+        else:
+            winner = env.get_winner()
+
+        finalized_examples = agent.finalize_game_examples(
+            winner=winner,
+            outcome_value=target_value_strength,
+        )
         train_info = agent.train_from_examples(batch_size=ALPHAZERO_BATCH_SIZE)
 
-        p1_outcome = 0.0 if winner is None else (1.0 if winner == P1 else -1.0)
+        p1_outcome = (
+            0.0
+            if winner is None
+            else (target_value_strength if winner == P1 else -target_value_strength)
+        )
         p2_outcome = -p1_outcome
         shared_score = p1_outcome + p2_outcome
 
@@ -171,14 +227,15 @@ def train_alphazero_self_play(
         stats["p1_rewards"].append(p1_outcome)
         stats["p2_rewards"].append(p2_outcome)
         stats["walls"].append(wall_count)
-        stats["p1_wins"].append(1 if winner == P1 else 0)
-        stats["p2_wins"].append(1 if winner == P2 else 0)
+        stats["p1_wins"].append(1 if not timeout_reached and winner == P1 else 0)
+        stats["p2_wins"].append(1 if not timeout_reached and winner == P2 else 0)
         stats["invalid_moves"].append(invalid_count)
         stats["shared_scores"].append(shared_score)
         stats["timeouts"].append(1 if timeout_reached else 0)
-        # Reuse the old plot layout: here "exploration" means root temperature.
-        stats["exploration_rate_p1"].append(root_temperature)
-        stats["exploration_rate_p2"].append(root_temperature)
+        stats["adjudicated_timeouts"].append(1 if adjudicated_timeout else 0)
+        # Reuse the old plot layout: here "exploration" means action temperature.
+        stats["exploration_rate_p1"].append(action_temperature)
+        stats["exploration_rate_p2"].append(action_temperature)
         stats["policy_loss"].append(train_info["policy_loss"])
         stats["value_loss"].append(train_info["value_loss"])
         stats["total_loss"].append(train_info["total_loss"])
@@ -193,6 +250,10 @@ def train_alphazero_self_play(
                 "steps": step_count,
                 "winner": winner,
                 "timeout": int(timeout_reached),
+                "adjudicated_timeout": int(adjudicated_timeout),
+                "target_value_strength": target_value_strength,
+                "timeout_adjudication_mode": timeout_adjudication_mode,
+                "timeout_adjudication_max_value": timeout_adjudication_max_value,
                 "walls": wall_count,
                 "invalid_moves": invalid_count,
                 "examples_generated": len(finalized_examples),
@@ -200,7 +261,10 @@ def train_alphazero_self_play(
                 "policy_loss": round(train_info["policy_loss"], 6),
                 "value_loss": round(train_info["value_loss"], 6),
                 "total_loss": round(train_info["total_loss"], 6),
-                "root_temperature": root_temperature,
+                "action_temperature": action_temperature,
+                "temperature_after_drop": temperature_after_drop,
+                "temperature_drop_step": temperature_drop_step,
+                "target_policy_temperature": target_policy_temperature,
                 "num_simulations": num_simulations,
                 "mcts_batch_size": mcts_batch_size,
             },
@@ -212,12 +276,15 @@ def train_alphazero_self_play(
             latest_game=game_num + 1,
             latest_winner=winner,
             replay_size=len(agent.examples),
+            num_simulations=num_simulations,
+            mcts_batch_size=mcts_batch_size,
         )
 
         print(
             f"\nGame {game_num + 1} | "
             f"Winner: {winner} | "
             f"Steps: {step_count} | "
+            f"Timeout adjudicated: {adjudicated_timeout} | "
             f"Examples: {len(finalized_examples)} | "
             f"Replay: {len(agent.examples)} | "
             f"Policy Loss: {train_info['policy_loss']:.4f} | "
@@ -244,16 +311,49 @@ def _append_metrics_row(csv_path, row):
         writer.writerow(row)
 
 
+def _adjudicate_timeout(env, mode, fixed_value, max_value):
+    if mode == TIMEOUT_ADJUDICATION_FIXED:
+        return env.get_timeout_adjudication_winner(), fixed_value
+
+    if mode != TIMEOUT_ADJUDICATION_PROPORTIONAL:
+        raise ValueError(
+            "timeout_adjudication_mode must be "
+            f"'{TIMEOUT_ADJUDICATION_FIXED}' or '{TIMEOUT_ADJUDICATION_PROPORTIONAL}'"
+        )
+
+    p1_distance = env.shortest_path_distance_to_goal(P1)
+    p2_distance = env.shortest_path_distance_to_goal(P2)
+
+    if not np.isfinite(p1_distance) or not np.isfinite(p2_distance):
+        return None, 0.0
+    if p1_distance == p2_distance:
+        return None, 0.0
+
+    winner = P1 if p1_distance < p2_distance else P2
+    distance_gap = abs(p1_distance - p2_distance)
+    value = min(float(max_value), distance_gap / env.grid_size)
+    return winner, value
+
+
 def _write_alphazero_metrics_summary(
-    metrics_json_path, stats, latest_game, latest_winner, replay_size
+    metrics_json_path,
+    stats,
+    latest_game,
+    latest_winner,
+    replay_size,
+    num_simulations,
+    mcts_batch_size,
 ):
     summary = {
         "latest_game": latest_game,
         "latest_winner": latest_winner,
         "replay_size": replay_size,
+        "num_simulations": num_simulations,
+        "mcts_batch_size": mcts_batch_size,
         "total_p1_wins": int(sum(stats["p1_wins"])),
         "total_p2_wins": int(sum(stats["p2_wins"])),
         "timeouts": int(sum(stats["timeouts"])),
+        "adjudicated_timeouts": int(sum(stats["adjudicated_timeouts"])),
         "avg_steps": float(np.mean(stats["steps"])) if stats["steps"] else 0.0,
         "avg_policy_loss": (
             float(np.mean(stats["policy_loss"])) if stats["policy_loss"] else 0.0
