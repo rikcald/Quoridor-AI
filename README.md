@@ -104,25 +104,28 @@ Average policy loss: 1.366
 Average value loss: 0.385
 ```
 
-## Comparing Checkpoints
+## Setup
 
-Run the arena:
+This project was developed and tested with Python 3.12. Using Python 3.12 is
+recommended because packages such as PyTorch and Pygame may not immediately
+support newer Python versions.
+
+Create and activate a virtual environment, then install dependencies:
 
 ```powershell
-.\venv\Scripts\python.exe .\arena_alphazero.py
+py -3.12 -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-The arena alternates which model plays as Player 1 and supports separate
-hyperparameters for each agent, including:
+The main dependencies are:
 
-- number of MCTS simulations
-- `c_puct`
-- move temperature
-- temperature after drop
-- temperature drop step
-
-This is useful for comparing whether a checkpoint is stronger because of the
-neural network itself or because of a more favorable search configuration.
+- Python
+- PyTorch
+- NumPy
+- Matplotlib
+- Pygame
+- Jupyter Notebook
 
 ## Play Against the Model
 
@@ -152,24 +155,27 @@ R      restart
 Esc    quit
 ```
 
-## Setup
 
-Create and activate a virtual environment, then install dependencies:
+## Comparing Checkpoints
+
+Run the arena:
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
+.\venv\Scripts\python.exe .\arena_alphazero.py
 ```
 
-The main dependencies are:
+The arena alternates which model plays as Player 1 and supports separate
+hyperparameters for each agent, including:
 
-- Python
-- PyTorch
-- NumPy
-- Matplotlib
-- Pygame
-- Jupyter Notebook
+- number of MCTS simulations
+- `c_puct`
+- move temperature
+- temperature after drop
+- temperature drop step
+
+This is useful for comparing whether a checkpoint is stronger because of the
+neural network itself or because of a more favorable search configuration.
+
 
 ## Notes and Limitations
 
