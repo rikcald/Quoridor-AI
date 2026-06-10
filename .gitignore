@@ -12,7 +12,13 @@ __pycache__/
 /.ipynb_checkpoints/
 /.jupyter_runtime/
 /jupyter_server.pid
-quoridor_alphazero_runs
 benchmark_inference.py
 didactic_alphazero_trace.py
 plot_run_metrics.py
+/quoridor_alphazero_runs/*
+!/quoridor_alphazero_runs/run_20260602_185704_3500games/
+!/quoridor_alphazero_runs/run_20260602_185704_3500games/**
+!/quoridor_alphazero_runs/run_20260606_112507_2.5c_puct/
+!/quoridor_alphazero_runs/run_20260606_112507_2.5c_puct/**
+!/quoridor_alphazero_runs/run_20260608_172643_3.5_puct/
+!/quoridor_alphazero_runs/run_20260608_172643_3.5_puct/**

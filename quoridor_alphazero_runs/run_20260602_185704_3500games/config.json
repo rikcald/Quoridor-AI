@@ -1,0 +1,21 @@
+{
+  "board_size": 5,
+  "max_walls": 4,
+  "num_games": 3500,
+  "max_steps_per_game": 80,
+  "learning_rate": 0.0005,
+  "num_filters": 32,
+  "num_simulations": 200,
+  "mcts_batch_size": 1,
+  "c_puct": 1.5,
+  "root_dirichlet_alpha": 0.15,
+  "root_dirichlet_epsilon": 0.15,
+  "temperature": 1.0,
+  "temperature_drop_step": 20,
+  "timeout_adjudication_value": 0.1,
+  "batch_size": 128,
+  "train_steps_per_game": 2,
+  "plot_every": 100,
+  "resume_from_checkpoint": false,
+  "checkpoint_path": ""
+}

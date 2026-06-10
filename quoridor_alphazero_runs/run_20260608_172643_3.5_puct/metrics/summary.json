@@ -1,0 +1,16 @@
+{
+  "latest_game": 500,
+  "latest_winner": 2,
+  "replay_size": 10277,
+  "best_value_loss": 0.1183033436536789,
+  "num_simulations": 600,
+  "mcts_batch_size": 1,
+  "total_p1_wins": 237,
+  "total_p2_wins": 250,
+  "timeouts": 13,
+  "adjudicated_timeouts": 12,
+  "avg_steps": 20.554,
+  "avg_policy_loss": 1.366199092388153,
+  "avg_value_loss": 0.38507861107587815,
+  "avg_total_loss": 1.751277702331543
+}
