@@ -59,7 +59,7 @@ the scale commonly reported for chess. The reduced setting therefore keeps the
 main strategic structure of the original game while making self-play training
 feasible on limited hardware.
 
-The goal of the project is not to reproduce the full-scale results of AlphaZero, but to implement the main ideas of the algorithm from scratch and test whether they can produce meaningful play in a smaller domain. The system includes a complete game environment, legal move generation, neural network inference, Monte Carlo Tree Search, self-play data generation, checkpointing, training metrics, and arena evaluation between trained agents. The experiments focus especially on the interaction between search depth, exploration, temperature scheduling, and stalled games.
+The goal of the project is not to reproduce the full-scale results of AlphaZero, but to implement the main ideas of the algorithm from scratch and test whether they can produce meaningful results in a smaller domain. The system includes a complete game environment, legal move generation, neural network inference, Monte Carlo Tree Search, self-play data generation, checkpointing, training metrics, and arena evaluation between trained agents. The experiments focus especially on the interaction between search depth, exploration, temperature scheduling, and stalled games.
 
 
 % ------------------------------------------------------------------------------
@@ -72,36 +72,55 @@ This project is inspired by AlphaZero, introduced by Silver et al. as a general 
 
 The environment implements Mini-Quoridor on a \(5 \times 5\) board. Each player starts on the opposite side and wins by reaching the other side. The action space contains 48 possible action slots: 16 movement actions, including normal moves, jumps, and diagonal jumps, plus 32 wall-placement actions corresponding to horizontal and vertical walls. Illegal actions are masked before sampling or training. Wall placement is only allowed if both players still have at least one valid path to their goal.
 The neural network is a convolutional policy-value model implemented in PyTorch. The input is a canonical player-centric board representation with six planes: current player position, opponent position, horizontal walls, vertical walls, current player remaining walls, and opponent remaining walls. The shared trunk consists of three convolutional blocks with batch normalization and ReLU activations. Two branches are then used: a policy head producing logits over the 48 actions, and a value head producing a scalar in \([-1, 1]\), representing the expected outcome from the current player’s perspective.
-At every move during self-play, MCTS is run from the current state. The tree uses the PUCT rule \cite{silver2017alphazero}
+At every move during self-play, MCTS is run from the current state. The tree uses the PUCT rule \cite{silver2017alphazero} to select which branches to expand:
+
 \[
 Q(s,a) + c_{puct} P(s,a) \frac{\sqrt{\sum_b N(s,b)}}{1 + N(s,a)}
 \]
 
-where \(Q(s,a)\) is the estimated value of an action, \(P(s,a)\) is the neural network prior, \(N(s,a)\) is the visit count, and the constant $c_{puct}$ controls the exploration--exploitation tradeoff in MCTS, there also is a Dirichlet noise that is added at the root during self-play to encourage exploration. After search, the root visit counts are converted into a target policy. The action temperature controls how the move is sampled, while a separate target-policy temperature controls how sharp the policy target is during training. This separation avoids training the network only on one-hot targets when self-play becomes greedy after the opening moves.
-Training examples have the form \((s_t, \pi_t, z_t)\), where \(s_t\) is the canonical state, \(\pi_t\) is the MCTS visit-count distribution, and \(z_t\) is the final outcome from the perspective of the player who acted in that state. The network is optimized with the sum of policy cross-entropy loss and value mean squared error. Because some self-play games can reach the maximum step limit without a terminal winner, timeout adjudication is used: unfinished games are assigned a weak value target based on which player has the shorter legal path to the goal.
+\(Q(s,a)\) is the estimated value of an action, \(P(s,a)\) is the neural network prior, \(N(s,a)\) is the visit count, and the constant $c_{puct}$ controls the exploration--exploitation tradeoff in MCTS. There also is a Dirichlet noise that is added at the root during self-play to encourage exploration. After search, the root visit counts are converted into a target policy. The action temperature controls how the move is sampled, while a separate target-policy temperature controls how sharp the policy target is during training. This separation avoids training the network only on one-hot targets when self-play becomes greedy after the opening moves.
+Training examples have the form \((s_t, \pi_t, z_t)\), where \(s_t\) is the canonical state, \(\pi_t\) is the MCTS visit-count distribution, and \(z_t\) is the final outcome from the perspective of the player who acted in that state. The network is optimized with the sum of policy cross-entropy loss and value mean squared error. Because some self-play games can reach the maximum step limit without a terminal winner, timeout adjudication is used: Unfinished games are assigned a weak value target based on which player has the shorter legal path to the goal.
 
 % ------------------------------------------------------------------------------
 
 \section{Experimental Results}
 %
-Several training runs were performed starting from random play and then fine-tuning from previous checkpoints. The first long run trained for 3500 self-play games with 200 MCTS simulations per move. 
-Figure~\ref{fig:baseline_training} shows rolling averages for game length, loss, and wall usage during this run.
+The experiments were organized in two stages: an initial training run from an untrained network, followed by several fine-tuning runs from selected checkpoints. The first long run trained for 3500 self-play games with 200 MCTS simulations per move, producing the first functional baseline agent. Figure~\ref{fig:baseline_training} shows rolling averages for game length, loss, and wall usage during this run.
 The average number of steps per game decreases over training, suggesting that
 the agent gradually learns more direct and efficient strategies. Wall usage also
 decreases, indicating that the agent becomes more selective instead of placing
 walls almost exhaustively in every game. The policy loss drops quickly in the early phase and then stabilizes. The value loss,
-however, is less monotonic. This is likely due to the fact that, as self-play improves, the generated positions become more balanced and harder to evaluate.
-This produced a functional baseline agent, but some games still reached the maximum step limit, especially in positions where one player was blocked and failed to find the longer route around walls.
-Further experiments tested different values of \(c_{puct}\), MCTS simulations, temperature scheduling, and timeout adjudication. A run with \(c_{puct}=0.7\) performed worse, reaching timeout in about 10.2\% of games and showing longer average games. This suggests that too little exploration made the search too greedy and less able to escape blocked positions. Increasing \(c_{puct}\) to 2.5 gave the best training behavior among the tested runs: timeout rate decreased to 3.0\% and average game length was 21.1 steps.
+however,  follows a slightly increasing trend.. This is likely due to the fact that, as self-play improves, the generated positions become more balanced and harder to evaluate. This also explains why the
+latest model checkpoints were often more stable than the `best' checkpoints saved at the minimum validation loss.
+
+Starting from this baseline, I fine-tuned several agents to reduce stalled games and improve overall playing stability. Table~\ref{tab:runs} shows the most relevant hyperparameter experiments. A lower \(c_{puct}\) value made the search too greedy and increased timeouts, while increasing exploration improved stability. The best run used \(c_{puct}=3.5\), reducing the timeout rate and the average game length. In contrast, increasing MCTS simulations to 10000 produced lower loss but worse gameplay statistics, showing that lower training loss does not necessarily imply stronger or more stable play. This run was stopped early once this trend became clear, because its computational cost was much higher than the other configurations.
+
 \begin{figure}[h]
     \centering
     \includegraphics[width=1\linewidth]{rolling_summary_3500games_run.png}
-    \caption{plot}
+    \caption{Baseline plot}
     \label{fig:baseline_training}
 \end{figure}
-Increasing the number of MCTS simulations did not always improve the result. A run with 10000 simulations per move achieved lower training loss, but produced worse gameplay statistics: timeout rate increased to 15.3\% and the average game length rose to 30.7 steps. This indicates that lower loss does not necessarily correspond to stronger or more stable play. In this case, deeper search produced sharper and more deterministic targets, but also appeared to reinforce repeated or stalled patterns.
-Arena evaluations between checkpoints confirmed that later fine-tuned agents learned stronger play than the original baseline. In particular, the agent trained with higher \(c_{puct}\) was competitive and often superior in direct matches. Qualitatively, trained agents learned to move toward the goal, place walls to delay the opponent, and exploit bottleneck positions. However, some failure cases remained, especially when an agent was forced into a long detour and repeated local moves instead of committing to the longer path.
-
+\begin{table}[t]
+\caption{Comparison of selected self-play runs.}
+\label{tab:runs}
+\begin{center}
+\begin{small}
+\begin{tabular}{lcccccc}
+\toprule
+Run & Simulations & games & $c_{puct}$ & Timeout & Avg. steps & Loss \\
+\midrule
+ Baseline & 200 & 3500 & 1.5 & 5.5\% & 23.3 & 1.95 \\
+Low expl.  & 600 & 500 & 0.7 & 10.2\% & 27.6 & 1.57 \\
+medium expl. & 600 & 500 & 2.5 & 3.0\% & 21.1 & 1.77 \\
+high expl. & 600 & 500 & 3.5 & \textbf{2.6\%} & \textbf{20.6} & 1.75 \\
+high sim. & 10000 & 144 & 1.5 & 15.3\% & 30.7 & \textbf{1.45} \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{center}
+\vspace{-0.3cm}
+\end{table}
 % ------------------------------------------------------------------------------
 \section{Discussion and conclusion}
 
