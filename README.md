@@ -155,6 +155,20 @@ R      restart
 Esc    quit
 ```
 
+The perceived difficulty is not determined only by the number of MCTS
+simulations. The selected checkpoint also has a strong impact on playing
+strength. To try a different model, edit `MODEL_PATH` in `play_vs_ai.py`, for
+example:
+
+```python
+MODEL_PATH = (
+    PROJECT_ROOT
+    / "quoridor_alphazero_runs"
+    / "run_20260606_112507_3.5c_puct"
+    / "models"
+    / "latest_model.pth"
+)
+```
 
 ## Comparing Checkpoints
 
