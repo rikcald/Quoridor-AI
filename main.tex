@@ -1,0 +1,133 @@
+\documentclass{article}
+
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{overpic}
+\usepackage{amssymb}
+
+\usepackage[accepted]{dlaiml2026}
+
+%%% STUDENTS: FILL IN WITH YOUR OWN INFORMATION
+\dlaititlerunning{Learning to Play Mini-Quoridor with AlphaZero-Style Self-Play}
+
+\begin{document}
+
+\twocolumn[
+%%% STUDENTS: FILL IN WITH YOUR OWN INFORMATION
+\dlaititle{Learning to Play Mini-Quoridor with AlphaZero-Style Self-Play}
+
+\begin{center}\today\end{center}
+
+\begin{dlaiauthorlist}
+%%% STUDENTS: FILL IN WITH YOUR OWN INFORMATION
+\dlaiauthor{Riccardo Calderoni}{}
+\end{dlaiauthorlist}
+
+%%% STUDENTS: FILL IN WITH YOUR OWN INFORMATION
+\dlaicorrespondingauthor{Riccardo Calderoni}{calderoni.1890686@studenti.uniroma1.it}
+
+\vskip 0.3in
+]
+
+
+
+\begin{abstract}
+%
+This experiment investigates whether an AlphaZero-style reinforcement learning pipeline can learn to play a smaller version of the board game Quoridor. In Quoridor, two players race to reach the opposite side of the board while placing walls to slow down the opponent. The agent is trained from self-play using Monte Carlo Tree Search guided by a convolutional policy-value network. Starting from an untrained policy, the agent learns movement and wall-placement strategies through repeated self-play games. The experiments focus on how search and exploration choices influence learning stability, game length, and stalled positions. The final agents exhibit meaningful strategic behavior.
+%
+\end{abstract}
+
+% ------------------------------------------------------------------------------
+\section{Introduction}
+
+Quoridor is a two-player deterministic board game in which each player must
+reach the opposite side of the board while using a limited number of walls to
+delay the opponent. This combination of path planning and blocking makes the
+game interesting for reinforcement learning: good play requires both short-term
+tactical movement and longer-term spatial reasoning about possible routes. In
+this project, I study a reduced version of the game, played on a \(5 \times 5\)
+board with four walls per player, instead of the classical \(9 \times 9\) board
+with ten walls per player.
+
+Despite the reduced board size, "Mini-Quoridor" remains combinatorially
+non-trivial. A rough upper bound gives approximately \(2 \times\ 10^{12}\) raw board configurations for
+the \(5 \times 5\) version with four walls per player. By comparison, the full
+\(9 \times 9\) game has been estimated at around \(4 \times\ 10^{42}\) configurations \cite{mertens2006quoridor}, close to
+the scale commonly reported for chess. The reduced setting therefore keeps the
+main strategic structure of the original game while making self-play training
+feasible on limited hardware.
+
+The goal of the project is not to reproduce the full-scale results of AlphaZero, but to implement the main ideas of the algorithm from scratch and test whether they can produce meaningful play in a smaller domain. The system includes a complete game environment, legal move generation, neural network inference, Monte Carlo Tree Search, self-play data generation, checkpointing, training metrics, and arena evaluation between trained agents. The experiments focus especially on the interaction between search depth, exploration, temperature scheduling, and stalled games.
+
+
+% ------------------------------------------------------------------------------
+\section{Related work}
+
+This project is inspired by AlphaZero, introduced by Silver et al. as a general reinforcement learning algorithm able to learn chess, shogi, and Go from self-play, without human expert games or handcrafted evaluation functions \cite{silver2017alphazero}. The implementation also follows Surag Nair's AlphaZero General framework \cite{simpleAlpha}, which presents the algorithm as a policy iteration loop. In each self-play position, MCTS produces an improved move distribution from visit counts; after the game ends, the final outcome is used as the value target. The network is then trained to imitate the MCTS policy and predict the game result. For understanding the mechanics of MCTS selection and expansion, I also used an interactive MCTS visualization \cite{tictactoeMCTS}.
+
+% ------------------------------------------------------------------------------
+\section{Method}
+
+The environment implements Mini-Quoridor on a \(5 \times 5\) board. Each player starts on the opposite side and wins by reaching the other side. The action space contains 48 possible action slots: 16 movement actions, including normal moves, jumps, and diagonal jumps, plus 32 wall-placement actions corresponding to horizontal and vertical walls. Illegal actions are masked before sampling or training. Wall placement is only allowed if both players still have at least one valid path to their goal.
+The neural network is a convolutional policy-value model implemented in PyTorch. The input is a canonical player-centric board representation with six planes: current player position, opponent position, horizontal walls, vertical walls, current player remaining walls, and opponent remaining walls. The shared trunk consists of three convolutional blocks with batch normalization and ReLU activations. Two branches are then used: a policy head producing logits over the 48 actions, and a value head producing a scalar in \([-1, 1]\), representing the expected outcome from the current player’s perspective.
+At every move during self-play, MCTS is run from the current state. The tree uses the PUCT rule \cite{silver2017alphazero}
+\[
+Q(s,a) + c_{puct} P(s,a) \frac{\sqrt{\sum_b N(s,b)}}{1 + N(s,a)}
+\]
+
+where \(Q(s,a)\) is the estimated value of an action, \(P(s,a)\) is the neural network prior, \(N(s,a)\) is the visit count, and the constant $c_{puct}$ controls the exploration--exploitation tradeoff in MCTS, there also is a Dirichlet noise that is added at the root during self-play to encourage exploration. After search, the root visit counts are converted into a target policy. The action temperature controls how the move is sampled, while a separate target-policy temperature controls how sharp the policy target is during training. This separation avoids training the network only on one-hot targets when self-play becomes greedy after the opening moves.
+Training examples have the form \((s_t, \pi_t, z_t)\), where \(s_t\) is the canonical state, \(\pi_t\) is the MCTS visit-count distribution, and \(z_t\) is the final outcome from the perspective of the player who acted in that state. The network is optimized with the sum of policy cross-entropy loss and value mean squared error. Because some self-play games can reach the maximum step limit without a terminal winner, timeout adjudication is used: unfinished games are assigned a weak value target based on which player has the shorter legal path to the goal.
+
+% ------------------------------------------------------------------------------
+
+\section{Experimental Results}
+%
+Several training runs were performed starting from random play and then fine-tuning from previous checkpoints. The first long run trained for 3500 self-play games with 200 MCTS simulations per move. 
+Figure~\ref{fig:baseline_training} shows rolling averages for game length, loss, and wall usage during this run.
+The average number of steps per game decreases over training, suggesting that
+the agent gradually learns more direct and efficient strategies. Wall usage also
+decreases, indicating that the agent becomes more selective instead of placing
+walls almost exhaustively in every game. The policy loss drops quickly in the early phase and then stabilizes. The value loss,
+however, is less monotonic. This is likely due to the fact that, as self-play improves, the generated positions become more balanced and harder to evaluate.
+This produced a functional baseline agent, but some games still reached the maximum step limit, especially in positions where one player was blocked and failed to find the longer route around walls.
+Further experiments tested different values of \(c_{puct}\), MCTS simulations, temperature scheduling, and timeout adjudication. A run with \(c_{puct}=0.7\) performed worse, reaching timeout in about 10.2\% of games and showing longer average games. This suggests that too little exploration made the search too greedy and less able to escape blocked positions. Increasing \(c_{puct}\) to 2.5 gave the best training behavior among the tested runs: timeout rate decreased to 3.0\% and average game length was 21.1 steps.
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\linewidth]{rolling_summary_3500games_run.png}
+    \caption{plot}
+    \label{fig:baseline_training}
+\end{figure}
+Increasing the number of MCTS simulations did not always improve the result. A run with 10000 simulations per move achieved lower training loss, but produced worse gameplay statistics: timeout rate increased to 15.3\% and the average game length rose to 30.7 steps. This indicates that lower loss does not necessarily correspond to stronger or more stable play. In this case, deeper search produced sharper and more deterministic targets, but also appeared to reinforce repeated or stalled patterns.
+Arena evaluations between checkpoints confirmed that later fine-tuned agents learned stronger play than the original baseline. In particular, the agent trained with higher \(c_{puct}\) was competitive and often superior in direct matches. Qualitatively, trained agents learned to move toward the goal, place walls to delay the opponent, and exploit bottleneck positions. However, some failure cases remained, especially when an agent was forced into a long detour and repeated local moves instead of committing to the longer path.
+
+% ------------------------------------------------------------------------------
+\section{Discussion and conclusion}
+
+The results show that an AlphaZero-style pipeline can learn meaningful Mini-Quoridor strategies from self-play. Even with a small convolutional network, the agent learned both movement and wall-placement behavior without human demonstrations. The project also highlights an important practical limitation: in small custom environments, the quality of self-play data is strongly affected by search and exploration hyperparameters. More simulations or lower loss are not automatically better if they generate overly deterministic or stalled games.
+The best observed configuration used moderate search, higher exploration through \(c_{puct}=2.5\), temperature scheduling, and weak timeout adjudication. This reduced stalled games but did not eliminate them completely. Future work could address this more directly by detecting repeated positions, terminating loops earlier, or adding shortest-path information as extra input planes to the neural network. A deeper residual network could also improve spatial reasoning, although this would increase training cost.
+Overall, the project demonstrates a working proof of concept: AlphaZero’s core ideas can be implemented from scratch and adapted to Mini-Quoridor, producing agents that learn recognizable strategic behavior through self-play.
+% ------------------------------------------------------------------------------
+\newpage
+% ------------------------------------------------------------------------------
+\section{Statement on the use of AI}
+AI-based tools were used as support during the development of this project.
+In particular, they assisted with code debugging, report editing, the generation
+of auxiliary plotting scripts, code commenting and organization, and the
+refactoring of some Python script functions. They were also used for
+brainstorming possible hyperparameters to test during fine-tuning experiments.
+
+All code, experiments, results, and final writing were reviewed and verified by
+the author. No code or technical content was included in the final submission
+without being understood, checked, and accepted by the author.
+
+\bibliographystyle{dlaiml2026}
+\bibliography{references.bib}
+
+
+
+
+
+\end{document}
+
