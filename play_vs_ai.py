@@ -24,7 +24,7 @@ from mcts import MCTS  # noqa: E402
 MODEL_PATH = (
     PROJECT_ROOT
     / "quoridor_alphazero_runs"
-    / "run_20260606_112507_2.5c_puct"
+    / "run_20260610_123335"
     / "models"
     / "latest_model.pth"
 )
@@ -44,7 +44,7 @@ MAX_STEPS_PER_GAME = 70
 DIFFICULTIES = [
     ("Easy", 20, "Fast search, useful for a quick demo."),
     ("Medium", 200, "Similar scale to early training games."),
-    ("Challenging", 1000, "Stronger and slower."),
+    ("Challenging", 2000, "Stronger and slower."),
     ("Hard", 10000, "Very slow, strongest search budget."),
 ]
 

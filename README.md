@@ -141,7 +141,7 @@ The demo lets the user choose the AI search budget:
 |---|---:|
 | Easy | 20 |
 | Medium | 200 |
-| Challenging | 1000 |
+| Challenging | 2000 |
 | Hard | 10000 |
 
 Controls:
