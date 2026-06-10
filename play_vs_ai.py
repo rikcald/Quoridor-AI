@@ -36,9 +36,9 @@ HUMAN_PLAYER = 1
 AI_C_PUCT = 2.5
 # AI move temperature controls how the AI samples from MCTS root visits.
 # Example: 1.0 samples proportionally from visits; 0.0 plays the most visited move.
-AI_TEMPERATURE = 1.0
+AI_TEMPERATURE = 0.5
 AI_TEMPERATURE_AFTER_DROP = 0.0
-AI_TEMPERATURE_DROP_STEP = 4
+AI_TEMPERATURE_DROP_STEP = 1  # it is just 1 to make the AI deterministic from the start, which is better for a demo. You can increase it to let the AI play more diverse moves in early game.
 MAX_STEPS_PER_GAME = 70
 
 DIFFICULTIES = [
