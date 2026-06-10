@@ -534,7 +534,7 @@ def draw_sidebar():
     controls = [
         "M: move mode",
         "W: wall mode",
-        "H/V or Space: wall direction",
+        "Space or H/V : change wall orientation",
         "R: restart",
         "Esc: quit",
     ]
