@@ -104,6 +104,19 @@ Average policy loss: 1.366
 Average value loss: 0.385
 ```
 
+However, a later head-to-head tournament showed that better self-play statistics
+did not necessarily correspond to a stronger agent. The main checkpoints were
+tested against each other over multiple games, using 800 MCTS simulations per
+move and repeating the tournament with different evaluation c_puct values
+(1.5, 2.5, and 3.5).
+
+| Model | Wins | Losses | Draws/Timeouts | Win rate |
+|---|---:|---:|---:|---:|
+| Balanced fine-tune | 582 | 220 | 98 | 72.6% |
+| Medium exploration | 421 | 371 | 108 | 53.2% |
+| Baseline | 334 | 508 | 58 | 39.7% |
+| High exploration | 259 | 497 | 144 | 34.3% |
+
 ## Setup
 
 This project was developed and tested with Python 3.12. Using Python 3.12 is
