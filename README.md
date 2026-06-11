@@ -35,7 +35,6 @@ outcome is used to train a convolutional policy-value network.
 | `game/mcts.py` | AlphaZero-style MCTS with PUCT selection and root visit-count policies. |
 | `game/agent.py` | Self-play agent wrapper, replay buffer, policy masking, checkpoint saving. |
 | `game/alphazero_training.py` | Self-play training loop, metrics, timeout adjudication, plotting hooks. |
-| `train_alphazero.py` | Script entrypoint for training with editable hyperparameters. |
 | `quoridor_alphazero_notebook.ipynb` | Jupyter notebook used for experiments and training runs. |
 | `arena_alphazero.py` | Arena for comparing two trained checkpoints with separate MCTS settings. |
 | `play_vs_ai.py` | Pygame demo where a human can play against a trained model. |
@@ -170,7 +169,7 @@ Esc    quit
 
 The perceived difficulty is not determined only by the number of MCTS
 simulations. The selected checkpoint has a strong impact on playing strength, and
-search settings such as `c_puct`, move temperature, and temperature drop step can
+search settings such as `c_puct`, temperature, and temperature drop step can
 also noticeably change the AI's behavior. To try a different model, edit
 `MODEL_PATH` in `play_vs_ai.py`, for example:
 

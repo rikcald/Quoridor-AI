@@ -24,7 +24,7 @@ from mcts import MCTS  # noqa: E402
 MODEL_PATH = (
     PROJECT_ROOT
     / "quoridor_alphazero_runs"
-    / "run_20260605_181100_balanced"
+    / "run_20260606_112507_2.5c_puct"
     / "models"
     / "latest_model.pth"
 )
@@ -33,12 +33,12 @@ MODEL_NAME = "AlphaZero Mini-Quoridor"
 BOARD_SIZE = 5
 MAX_WALLS = 4
 HUMAN_PLAYER = 1
-AI_C_PUCT = 1.5
-# AI move temperature controls how the AI samples from MCTS root visits.
+AI_C_PUCT = 2.5
+# AI temperature controls how the AI samples from MCTS root visits.
 # Example: 1.0 samples proportionally from visits; 0.0 plays the most visited move.
 AI_TEMPERATURE = 1
 AI_TEMPERATURE_AFTER_DROP = 0.0
-AI_TEMPERATURE_DROP_STEP = 1  # it is just 1 to make the AI deterministic from the start, which is better for a demo. You can increase it to let the AI play more diverse moves in early game.
+AI_TEMPERATURE_DROP_STEP = 2  # it is just 2 to make the AI deterministic after the first 2 moves, which is nice for demo purposes.
 MAX_STEPS_PER_GAME = 70
 
 DIFFICULTIES = [
