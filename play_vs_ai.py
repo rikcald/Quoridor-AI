@@ -24,7 +24,7 @@ from mcts import MCTS  # noqa: E402
 MODEL_PATH = (
     PROJECT_ROOT
     / "quoridor_alphazero_runs"
-    / "run_20260610_123335"
+    / "run_20260605_181100_balanced"
     / "models"
     / "latest_model.pth"
 )
@@ -33,19 +33,19 @@ MODEL_NAME = "AlphaZero Mini-Quoridor"
 BOARD_SIZE = 5
 MAX_WALLS = 4
 HUMAN_PLAYER = 1
-AI_C_PUCT = 2.5
+AI_C_PUCT = 1.5
 # AI move temperature controls how the AI samples from MCTS root visits.
 # Example: 1.0 samples proportionally from visits; 0.0 plays the most visited move.
-AI_TEMPERATURE = 0.5
+AI_TEMPERATURE = 1
 AI_TEMPERATURE_AFTER_DROP = 0.0
 AI_TEMPERATURE_DROP_STEP = 1  # it is just 1 to make the AI deterministic from the start, which is better for a demo. You can increase it to let the AI play more diverse moves in early game.
 MAX_STEPS_PER_GAME = 70
 
 DIFFICULTIES = [
-    ("Easy", 20, "Fast search, useful for a quick demo."),
-    ("Medium", 200, "Similar scale to early training games."),
-    ("Challenging", 2000, "Stronger and slower."),
-    ("Hard", 10000, "Very slow, strongest search budget."),
+    ("Quick", 20, "Fast search, useful for a quick demo."),
+    ("Standard", 200, "Similar scale to early training games."),
+    ("Strong", 2000, "Stronger and slower."),
+    ("Deep", 10000, "Very slow, strongest search budget."),
 ]
 
 CELL = 72

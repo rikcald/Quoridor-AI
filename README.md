@@ -152,10 +152,10 @@ The demo lets the user choose the AI search budget:
 
 | Difficulty | MCTS simulations per AI move |
 |---|---:|
-| Easy | 20 |
-| Medium | 200 |
-| Challenging | 2000 |
-| Hard | 10000 |
+| Quick | 20 |
+| Standard | 200 |
+| Strong | 2000 |
+| Deep | 10000 |
 
 Controls:
 
@@ -169,9 +169,10 @@ Esc    quit
 ```
 
 The perceived difficulty is not determined only by the number of MCTS
-simulations. The selected checkpoint also has a strong impact on playing
-strength. To try a different model, edit `MODEL_PATH` in `play_vs_ai.py`, for
-example:
+simulations. The selected checkpoint has a strong impact on playing strength, and
+search settings such as `c_puct`, move temperature, and temperature drop step can
+also noticeably change the AI's behavior. To try a different model, edit
+`MODEL_PATH` in `play_vs_ai.py`, for example:
 
 ```python
 MODEL_PATH = (
