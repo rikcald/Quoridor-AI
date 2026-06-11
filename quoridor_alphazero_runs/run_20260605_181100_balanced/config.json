@@ -1,0 +1,23 @@
+{
+  "board_size": 5,
+  "max_walls": 4,
+  "num_games": 500,
+  "max_steps_per_game": 70,
+  "learning_rate": 0.0002,
+  "num_filters": 32,
+  "num_simulations": 600,
+  "mcts_batch_size": 1,
+  "c_puct": 1.5,
+  "root_dirichlet_alpha": 0.15,
+  "root_dirichlet_epsilon": 0.15,
+  "temperature": 1.0,
+  "temperature_after_drop": 0.0,
+  "temperature_drop_step": 8,
+  "target_policy_temperature": 1.0,
+  "timeout_adjudication_value": 0.3,
+  "batch_size": 128,
+  "train_steps_per_game": 2,
+  "plot_every": 10,
+  "resume_from_checkpoint": true,
+  "checkpoint_path": "quoridor_alphazero_runs/run_20260602_185704_3500games/models/latest_model.pth"
+}
